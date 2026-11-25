@@ -1,0 +1,677 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core helper primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isBootstrapAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'khalid134099@gmail.com';
+    }
+
+    function isTeacher() {
+      return isBootstrapAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/teachers/$(request.auth.uid))
+      );
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isValidInt(val, minVal, maxVal) {
+      return val is int && val >= minVal && val <= maxVal;
+    }
+
+    // Entity Validation Blueprints
+
+    function isValidTeacher(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'addedBy', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'addedBy', 'createdAt']) &&
+        isValidId(data.uid) &&
+        isValidString(data.displayName, 1, 80) &&
+        isValidId(data.addedBy) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidUserPrivate(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'email', 'role', 'preferredLanguage', 'preferredTheme',
+          'notificationsEnabled', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'email', 'role', 'preferredLanguage', 'preferredTheme',
+          'notificationsEnabled', 'fcmToken', 'createdAt', 'updatedAt'
+        ]) &&
+        data.uid == userId &&
+        isValidString(data.email, 3, 254) &&
+        data.role in ['teacher', 'student'] &&
+        data.preferredLanguage in ['ar', 'en'] &&
+        data.preferredTheme in ['light', 'dark'] &&
+        data.notificationsEnabled is bool &&
+        (!('fcmToken' in data) || isValidOptionalString(data.fcmToken, 512)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStudent(data, studentId) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'photoURL', 'level', 'totalPoints',
+          'lifetimePoints', 'weeklyEarned', 'monthlyEarned', 'weekKey',
+          'monthKey', 'completedLessonsCount', 'badges', 'isActive',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'displayName', 'photoURL', 'level', 'totalPoints',
+          'lifetimePoints', 'weeklyEarned', 'monthlyEarned', 'weekKey',
+          'monthKey', 'completedLessonsCount', 'badges', 'lastTxId',
+          'isActive', 'createdAt', 'updatedAt'
+        ]) &&
+        data.uid == studentId &&
+        isValidString(data.displayName, 1, 80) &&
+        isValidOptionalString(data.photoURL, 220000) &&
+        isValidString(data.level, 1, 40) &&
+        isValidInt(data.totalPoints, 0, 1000000) &&
+        isValidInt(data.lifetimePoints, 0, 10000000) &&
+        isValidInt(data.weeklyEarned, 0, 1000000) &&
+        isValidInt(data.monthlyEarned, 0, 1000000) &&
+        isValidString(data.weekKey, 4, 20) &&
+        isValidString(data.monthKey, 4, 20) &&
+        isValidInt(data.completedLessonsCount, 0, 10000) &&
+        data.badges is list &&
+        data.badges.size() <= 30 &&
+        (data.badges.size() == 0 || data.badges[0] is string) &&
+        (!('lastTxId' in data) || isValidId(data.lastTxId)) &&
+        data.isActive is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidLesson(data) {
+      return data.keys().hasAll([
+          'title', 'titleAr', 'description', 'descriptionAr', 'videoUrl',
+          'thumbnailUrl', 'level', 'unit', 'topic', 'teacherNotes',
+          'teacherNotesAr', 'points', 'durationMinutes', 'isPublished',
+          'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'titleAr', 'description', 'descriptionAr', 'videoUrl',
+          'thumbnailUrl', 'level', 'unit', 'topic', 'teacherNotes',
+          'teacherNotesAr', 'points', 'durationMinutes', 'isPublished',
+          'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.titleAr, 1, 120) &&
+        isValidOptionalString(data.description, 1500) &&
+        isValidOptionalString(data.descriptionAr, 1500) &&
+        isValidString(data.videoUrl, 5, 1000) &&
+        isValidOptionalString(data.thumbnailUrl, 220000) &&
+        isValidString(data.level, 1, 40) &&
+        isValidString(data.unit, 1, 60) &&
+        isValidString(data.topic, 1, 60) &&
+        isValidOptionalString(data.teacherNotes, 2000) &&
+        isValidOptionalString(data.teacherNotesAr, 2000) &&
+        isValidInt(data.points, 0, 1000) &&
+        isValidInt(data.durationMinutes, 1, 300) &&
+        data.isPublished is bool &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidLessonCompletion(data, completionId) {
+      return data.keys().hasAll(['studentId', 'lessonId', 'lessonTitle', 'pointsAwarded', 'completedAt']) &&
+        data.keys().hasOnly(['studentId', 'lessonId', 'lessonTitle', 'pointsAwarded', 'completedAt']) &&
+        isValidId(data.studentId) &&
+        isValidId(data.lessonId) &&
+        completionId == data.studentId + '_' + data.lessonId &&
+        isValidString(data.lessonTitle, 1, 120) &&
+        isValidInt(data.pointsAwarded, 0, 1000) &&
+        data.completedAt is timestamp;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll([
+          'title', 'titleAr', 'description', 'descriptionAr', 'type',
+          'level', 'points', 'dueDate', 'attachmentUrl', 'questions',
+          'isPublished', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'titleAr', 'description', 'descriptionAr', 'type',
+          'level', 'points', 'dueDate', 'attachmentUrl', 'questions',
+          'isPublished', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.titleAr, 1, 120) &&
+        isValidOptionalString(data.description, 1500) &&
+        isValidOptionalString(data.descriptionAr, 1500) &&
+        data.type in ['quiz', 'homework'] &&
+        isValidString(data.level, 1, 40) &&
+        isValidInt(data.points, 0, 1000) &&
+        isValidOptionalString(data.dueDate, 40) &&
+        isValidOptionalString(data.attachmentUrl, 1000) &&
+        data.questions is list &&
+        data.questions.size() <= 20 &&
+        (data.questions.size() == 0 || data.questions[0] is map) &&
+        data.isPublished is bool &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTaskSubmission(data, submissionId) {
+      return data.keys().hasAll([
+          'studentId', 'studentName', 'taskId', 'taskTitle', 'taskType',
+          'answerText', 'selectedAnswers', 'score', 'maxScore', 'status',
+          'pointsAwarded', 'teacherFeedback', 'submittedAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'studentId', 'studentName', 'taskId', 'taskTitle', 'taskType',
+          'answerText', 'selectedAnswers', 'score', 'maxScore', 'status',
+          'pointsAwarded', 'teacherFeedback', 'submittedAt', 'updatedAt'
+        ]) &&
+        isValidId(data.studentId) &&
+        isValidString(data.studentName, 1, 80) &&
+        isValidId(data.taskId) &&
+        submissionId == data.studentId + '_' + data.taskId &&
+        isValidString(data.taskTitle, 1, 120) &&
+        data.taskType in ['quiz', 'homework'] &&
+        isValidOptionalString(data.answerText, 2000) &&
+        data.selectedAnswers is list &&
+        data.selectedAnswers.size() <= 20 &&
+        (data.selectedAnswers.size() == 0 || data.selectedAnswers[0] is int) &&
+        isValidInt(data.score, 0, 100) &&
+        isValidInt(data.maxScore, 0, 100) &&
+        data.status in ['pending', 'approved', 'rejected', 'completed'] &&
+        isValidInt(data.pointsAwarded, 0, 1000) &&
+        isValidOptionalString(data.teacherFeedback, 500) &&
+        data.submittedAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNote(data) {
+      return data.keys().hasAll([
+          'title', 'titleAr', 'content', 'contentAr', 'targetStudentId',
+          'category', 'attachmentUrl', 'attachmentType', 'createdBy',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'titleAr', 'content', 'contentAr', 'targetStudentId',
+          'category', 'attachmentUrl', 'attachmentType', 'createdBy',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.titleAr, 1, 120) &&
+        isValidString(data.content, 1, 2500) &&
+        isValidString(data.contentAr, 1, 2500) &&
+        isValidId(data.targetStudentId) &&
+        data.category in ['announcement', 'note'] &&
+        isValidOptionalString(data.attachmentUrl, 220000) &&
+        data.attachmentType in ['none', 'link', 'image', 'file'] &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNoteRead(data, readId) {
+      return data.keys().hasAll(['studentId', 'noteId', 'readAt']) &&
+        data.keys().hasOnly(['studentId', 'noteId', 'readAt']) &&
+        isValidId(data.studentId) &&
+        isValidId(data.noteId) &&
+        readId == data.studentId + '_' + data.noteId &&
+        data.readAt is timestamp;
+    }
+
+    function isValidReward(data) {
+      return data.keys().hasAll([
+          'title', 'titleAr', 'description', 'descriptionAr', 'costPoints',
+          'category', 'imageUrl', 'isAvailable', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'titleAr', 'description', 'descriptionAr', 'costPoints',
+          'category', 'imageUrl', 'isAvailable', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidString(data.title, 1, 100) &&
+        isValidString(data.titleAr, 1, 100) &&
+        isValidOptionalString(data.description, 500) &&
+        isValidOptionalString(data.descriptionAr, 500) &&
+        isValidInt(data.costPoints, 1, 100000) &&
+        data.category in ['physical', 'virtual'] &&
+        isValidOptionalString(data.imageUrl, 220000) &&
+        data.isAvailable is bool &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRedemption(data) {
+      return data.keys().hasAll([
+          'studentId', 'studentName', 'rewardId', 'rewardTitle', 'rewardTitleAr',
+          'costPoints', 'status', 'teacherNote', 'requestedAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'studentId', 'studentName', 'rewardId', 'rewardTitle', 'rewardTitleAr',
+          'costPoints', 'status', 'teacherNote', 'requestedAt', 'updatedAt'
+        ]) &&
+        isValidId(data.studentId) &&
+        isValidString(data.studentName, 1, 80) &&
+        isValidId(data.rewardId) &&
+        isValidString(data.rewardTitle, 1, 100) &&
+        isValidString(data.rewardTitleAr, 1, 100) &&
+        isValidInt(data.costPoints, 1, 100000) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidOptionalString(data.teacherNote, 300) &&
+        data.requestedAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPointTransaction(data) {
+      return data.keys().hasAll([
+          'studentId', 'studentName', 'amount', 'type', 'sourceType',
+          'sourceId', 'reason', 'reasonAr', 'weekKey', 'monthKey',
+          'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'studentId', 'studentName', 'amount', 'type', 'sourceType',
+          'sourceId', 'reason', 'reasonAr', 'weekKey', 'monthKey',
+          'createdBy', 'createdAt'
+        ]) &&
+        isValidId(data.studentId) &&
+        isValidString(data.studentName, 1, 80) &&
+        isValidInt(data.amount, -100000, 10000) &&
+        data.type in ['earn', 'redeem', 'deduct', 'bonus'] &&
+        data.sourceType in ['lesson', 'quiz', 'homework', 'reward', 'teacher'] &&
+        isValidId(data.sourceId) &&
+        isValidString(data.reason, 1, 200) &&
+        isValidString(data.reasonAr, 1, 200) &&
+        isValidString(data.weekKey, 4, 20) &&
+        isValidString(data.monthKey, 4, 20) &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll([
+          'targetStudentId', 'title', 'titleAr', 'body', 'bodyAr',
+          'type', 'linkTab', 'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'targetStudentId', 'title', 'titleAr', 'body', 'bodyAr',
+          'type', 'linkTab', 'createdBy', 'createdAt'
+        ]) &&
+        isValidId(data.targetStudentId) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.titleAr, 1, 120) &&
+        isValidString(data.body, 1, 500) &&
+        isValidString(data.bodyAr, 1, 500) &&
+        data.type in ['video', 'note', 'task', 'announcement', 'points', 'reward'] &&
+        isValidString(data.linkTab, 1, 40) &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNotificationRead(data, readId) {
+      return data.keys().hasAll(['studentId', 'notifId', 'readAt']) &&
+        data.keys().hasOnly(['studentId', 'notifId', 'readAt']) &&
+        isValidId(data.studentId) &&
+        isValidId(data.notifId) &&
+        readId == data.studentId + '_' + data.notifId &&
+        data.readAt is timestamp;
+    }
+
+    // Collection Rules
+
+    match /teachers/{teacherId} {
+      allow get: if isValidId(teacherId) && isVerifiedUser() && (request.auth.uid == teacherId || isTeacher());
+      allow list: if isBootstrapAdmin();
+      allow create: if isValidId(teacherId) && isBootstrapAdmin() && isValidTeacher(incoming()) &&
+        incoming().uid == teacherId && incoming().addedBy == request.auth.uid && incoming().createdAt == request.time;
+      allow update, delete: if isValidId(teacherId) && isBootstrapAdmin();
+    }
+
+    match /user_private/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isTeacher());
+      allow list: if isBootstrapAdmin();
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUserPrivate(incoming(), userId) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        ((incoming().role == 'student') || (incoming().role == 'teacher' && isTeacher()));
+      allow update: if isValidId(userId) && isValidUserPrivate(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isTeacher() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt'])) ||
+          (isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().email == existing().email &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'preferredLanguage', 'preferredTheme', 'notificationsEnabled', 'fcmToken', 'updatedAt'
+            ]))
+        );
+      allow delete: if isValidId(userId) && isBootstrapAdmin();
+    }
+
+    match /students/{studentId} {
+      allow get: if isValidId(studentId) && isSignedIn() && (existing().isActive == true || isOwner(studentId) || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isActive == true);
+      allow create: if isValidId(studentId) && isValidStudent(incoming(), studentId) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (
+          isTeacher() ||
+          (isOwner(studentId) &&
+            incoming().totalPoints == 0 &&
+            incoming().lifetimePoints == 0 &&
+            incoming().weeklyEarned == 0 &&
+            incoming().monthlyEarned == 0 &&
+            incoming().completedLessonsCount == 0 &&
+            incoming().badges.size() == 0 &&
+            incoming().isActive == true)
+        );
+      allow update: if isValidId(studentId) && isValidStudent(incoming(), studentId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isTeacher() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName', 'photoURL', 'level', 'totalPoints', 'lifetimePoints',
+            'weeklyEarned', 'monthlyEarned', 'weekKey', 'monthKey',
+            'completedLessonsCount', 'badges', 'lastTxId', 'isActive', 'updatedAt'
+          ])) ||
+          (isOwner(studentId) && incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName', 'photoURL', 'updatedAt'
+          ])) ||
+          (isOwner(studentId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'totalPoints', 'lifetimePoints', 'weeklyEarned', 'monthlyEarned',
+              'weekKey', 'monthKey', 'completedLessonsCount', 'badges', 'lastTxId', 'updatedAt'
+            ]) &&
+            ('lastTxId' in incoming()) &&
+            !exists(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)) &&
+            existsAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)) &&
+            getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.studentId == studentId &&
+            getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.amount >= 0 &&
+            incoming().totalPoints == existing().totalPoints + getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.amount &&
+            incoming().lifetimePoints == existing().lifetimePoints + getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.amount &&
+            (
+              (incoming().weekKey == existing().weekKey &&
+                incoming().weeklyEarned == existing().weeklyEarned + getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.amount) ||
+              (incoming().weekKey != existing().weekKey &&
+                incoming().weeklyEarned == getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.amount)
+            ) &&
+            (
+              (incoming().monthKey == existing().monthKey &&
+                incoming().monthlyEarned == existing().monthlyEarned + getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.amount) ||
+              (incoming().monthKey != existing().monthKey &&
+                incoming().monthlyEarned == getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.amount)
+            ) &&
+            (
+              (getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.sourceType == 'lesson' &&
+                incoming().completedLessonsCount == existing().completedLessonsCount + 1) ||
+              (getAfter(/databases/$(database)/documents/point_transactions/$(incoming().lastTxId)).data.sourceType != 'lesson' &&
+                incoming().completedLessonsCount == existing().completedLessonsCount)
+            ) &&
+            incoming().badges.hasAll(existing().badges) &&
+            incoming().badges.size() <= existing().badges.size() + 3)
+        );
+      allow delete: if isValidId(studentId) && isTeacher();
+    }
+
+    match /lessons/{lessonId} {
+      allow get: if isValidId(lessonId) && isSignedIn() && (existing().isPublished == true || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isPublished == true);
+      allow create: if isValidId(lessonId) && isTeacher() && isValidLesson(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(lessonId) && isTeacher() && isValidLesson(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'titleAr', 'description', 'descriptionAr', 'videoUrl',
+          'thumbnailUrl', 'level', 'unit', 'topic', 'teacherNotes',
+          'teacherNotesAr', 'points', 'durationMinutes', 'isPublished', 'updatedAt'
+        ]);
+      allow delete: if isValidId(lessonId) && isTeacher();
+    }
+
+    match /lesson_completions/{completionId} {
+      allow get: if isValidId(completionId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow create: if isValidId(completionId) && isVerifiedUser() &&
+        isValidLessonCompletion(incoming(), completionId) &&
+        incoming().studentId == request.auth.uid &&
+        incoming().completedAt == request.time &&
+        exists(/databases/$(database)/documents/lessons/$(incoming().lessonId)) &&
+        incoming().pointsAwarded == get(/databases/$(database)/documents/lessons/$(incoming().lessonId)).data.points;
+      allow update: if false;
+      allow delete: if isValidId(completionId) && isTeacher();
+    }
+
+    match /tasks/{taskId} {
+      allow get: if isValidId(taskId) && isSignedIn() && (existing().isPublished == true || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isPublished == true);
+      allow create: if isValidId(taskId) && isTeacher() && isValidTask(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(taskId) && isTeacher() && isValidTask(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'titleAr', 'description', 'descriptionAr', 'type',
+          'level', 'points', 'dueDate', 'attachmentUrl', 'questions',
+          'isPublished', 'updatedAt'
+        ]);
+      allow delete: if isValidId(taskId) && isTeacher();
+    }
+
+    match /task_submissions/{submissionId} {
+      allow get: if isValidId(submissionId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow create: if isValidId(submissionId) && isVerifiedUser() &&
+        isValidTaskSubmission(incoming(), submissionId) &&
+        incoming().studentId == request.auth.uid &&
+        incoming().submittedAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+        (
+          (incoming().taskType == 'homework' &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.type == 'homework' &&
+            incoming().status == 'pending' &&
+            incoming().pointsAwarded == 0 &&
+            incoming().teacherFeedback == '') ||
+          (incoming().taskType == 'quiz' &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.type == 'quiz' &&
+            incoming().status == 'completed' &&
+            incoming().pointsAwarded <= get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.points &&
+            incoming().teacherFeedback == '')
+        );
+      allow update: if isValidId(submissionId) && isTeacher() &&
+        isValidTaskSubmission(incoming(), submissionId) &&
+        existing().status == 'pending' &&
+        incoming().studentId == existing().studentId &&
+        incoming().taskId == existing().taskId &&
+        incoming().taskType == existing().taskType &&
+        incoming().submittedAt == existing().submittedAt &&
+        incoming().updatedAt == request.time &&
+        incoming().status in ['approved', 'rejected'] &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'pointsAwarded', 'teacherFeedback', 'updatedAt'
+        ]);
+      allow delete: if isValidId(submissionId) && isTeacher();
+    }
+
+    match /notes/{noteId} {
+      allow get: if isValidId(noteId) && isSignedIn() && (
+        existing().targetStudentId == 'all' ||
+        existing().targetStudentId == request.auth.uid ||
+        isTeacher()
+      );
+      allow list: if isSignedIn() && (
+        isBootstrapAdmin() ||
+        resource.data.targetStudentId == 'all' ||
+        resource.data.targetStudentId == request.auth.uid
+      );
+      allow create: if isValidId(noteId) && isTeacher() && isValidNote(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(noteId) && isTeacher() && isValidNote(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'titleAr', 'content', 'contentAr', 'targetStudentId',
+          'category', 'attachmentUrl', 'attachmentType', 'updatedAt'
+        ]);
+      allow delete: if isValidId(noteId) && isTeacher();
+    }
+
+    match /note_reads/{readId} {
+      allow get: if isValidId(readId) && isSignedIn() && existing().studentId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.studentId == request.auth.uid;
+      allow create: if isValidId(readId) && isVerifiedUser() &&
+        isValidNoteRead(incoming(), readId) &&
+        incoming().studentId == request.auth.uid &&
+        incoming().readAt == request.time &&
+        exists(/databases/$(database)/documents/notes/$(incoming().noteId));
+      allow update, delete: if false;
+    }
+
+    match /rewards/{rewardId} {
+      allow get: if isValidId(rewardId) && isSignedIn() && (existing().isAvailable == true || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isAvailable == true);
+      allow create: if isValidId(rewardId) && isTeacher() && isValidReward(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(rewardId) && isTeacher() && isValidReward(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'titleAr', 'description', 'descriptionAr', 'costPoints',
+          'category', 'imageUrl', 'isAvailable', 'updatedAt'
+        ]);
+      allow delete: if isValidId(rewardId) && isTeacher();
+    }
+
+    match /redemptions/{redemptionId} {
+      allow get: if isValidId(redemptionId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow create: if isValidId(redemptionId) && isVerifiedUser() &&
+        isValidRedemption(incoming()) &&
+        incoming().studentId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().teacherNote == '' &&
+        incoming().requestedAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/rewards/$(incoming().rewardId)) &&
+        get(/databases/$(database)/documents/rewards/$(incoming().rewardId)).data.isAvailable == true &&
+        incoming().costPoints == get(/databases/$(database)/documents/rewards/$(incoming().rewardId)).data.costPoints &&
+        exists(/databases/$(database)/documents/students/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/students/$(request.auth.uid)).data.totalPoints >= incoming().costPoints;
+      allow update: if isValidId(redemptionId) && isTeacher() &&
+        isValidRedemption(incoming()) &&
+        existing().status == 'pending' &&
+        incoming().studentId == existing().studentId &&
+        incoming().rewardId == existing().rewardId &&
+        incoming().costPoints == existing().costPoints &&
+        incoming().requestedAt == existing().requestedAt &&
+        incoming().updatedAt == request.time &&
+        incoming().status in ['approved', 'rejected'] &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'teacherNote', 'updatedAt']);
+      allow delete: if isValidId(redemptionId) && isTeacher();
+    }
+
+    match /point_transactions/{txId} {
+      allow get: if isValidId(txId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow create: if isValidId(txId) && isVerifiedUser() &&
+        isValidPointTransaction(incoming()) &&
+        incoming().createdAt == request.time &&
+        (
+          (isTeacher() && incoming().createdBy == request.auth.uid) ||
+          (incoming().studentId == request.auth.uid &&
+            incoming().createdBy == request.auth.uid &&
+            incoming().type == 'earn' &&
+            incoming().amount >= 0 &&
+            (
+              (incoming().sourceType == 'lesson' &&
+                !exists(/databases/$(database)/documents/lesson_completions/$(request.auth.uid + '_' + incoming().sourceId)) &&
+                existsAfter(/databases/$(database)/documents/lesson_completions/$(request.auth.uid + '_' + incoming().sourceId)) &&
+                incoming().amount == get(/databases/$(database)/documents/lessons/$(incoming().sourceId)).data.points) ||
+              (incoming().sourceType == 'quiz' &&
+                !exists(/databases/$(database)/documents/task_submissions/$(request.auth.uid + '_' + incoming().sourceId)) &&
+                existsAfter(/databases/$(database)/documents/task_submissions/$(request.auth.uid + '_' + incoming().sourceId)) &&
+                get(/databases/$(database)/documents/tasks/$(incoming().sourceId)).data.type == 'quiz' &&
+                incoming().amount <= get(/databases/$(database)/documents/tasks/$(incoming().sourceId)).data.points)
+            ))
+        );
+      allow update, delete: if false;
+    }
+
+    match /notifications/{notifId} {
+      allow get: if isValidId(notifId) && isSignedIn() && (
+        existing().targetStudentId == 'all' ||
+        existing().targetStudentId == request.auth.uid ||
+        isTeacher()
+      );
+      allow list: if isSignedIn() && (
+        isBootstrapAdmin() ||
+        resource.data.targetStudentId == 'all' ||
+        resource.data.targetStudentId == request.auth.uid
+      );
+      allow create: if isValidId(notifId) && isTeacher() && isValidNotification(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(notifId) && isTeacher();
+    }
+
+    match /notification_reads/{readId} {
+      allow get: if isValidId(readId) && isSignedIn() && existing().studentId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.studentId == request.auth.uid;
+      allow create: if isValidId(readId) && isVerifiedUser() &&
+        isValidNotificationRead(incoming(), readId) &&
+        incoming().studentId == request.auth.uid &&
+        incoming().readAt == request.time &&
+        exists(/databases/$(database)/documents/notifications/$(incoming().notifId));
+      allow update, delete: if false;
+    }
+  }
+}

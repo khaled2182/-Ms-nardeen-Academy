@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', 'Cairo', system-ui, -apple-system, sans-serif;
+    --font-arabic: 'Cairo', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  html[dir="rtl"] body {
+    font-family: var(--font-arabic);
+  }
+
+  html[dir="ltr"] body {
+    font-family: var(--font-sans);
+  }
+
+  h1, h2, h3, h4 {
+    text-wrap: balance;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Radiant champion showcase halo for transparent PNG #1 winner */
+.champion-halo {
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(250, 204, 21, 0.34) 0%,
+    rgba(56, 189, 248, 0.22) 45%,
+    rgba(167, 139, 250, 0.12) 72%,
+    transparent 100%
+  );
+}
+
+.dark .champion-halo {
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(250, 204, 21, 0.28) 0%,
+    rgba(56, 189, 248, 0.2) 45%,
+    rgba(167, 139, 250, 0.14) 72%,
+    transparent 100%
+  );
+}
+
+.champion-glow-ring {
+  box-shadow:
+    0 0 0 3px rgba(250, 204, 21, 0.55),
+    0 0 36px rgba(250, 204, 21, 0.32),
+    0 0 64px rgba(56, 189, 248, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

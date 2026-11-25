@@ -1,0 +1,433 @@
+{
+  "entities": {
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Authorized teacher account record.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "addedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "addedBy", "createdAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Private user account metadata and PII isolated from public collections.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 254 },
+        "role": { "type": "string", "enum": ["teacher", "student"] },
+        "preferredLanguage": { "type": "string", "enum": ["ar", "en"] },
+        "preferredTheme": { "type": "string", "enum": ["light", "dark"] },
+        "notificationsEnabled": { "type": "boolean" },
+        "fcmToken": { "type": "string", "maxLength": 512 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "preferredLanguage", "preferredTheme", "notificationsEnabled", "createdAt", "updatedAt"]
+    },
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Non-PII student gamification and academic profile.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 220000 },
+        "level": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "totalPoints": { "type": "integer" },
+        "lifetimePoints": { "type": "integer" },
+        "weeklyEarned": { "type": "integer" },
+        "monthlyEarned": { "type": "integer" },
+        "weekKey": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "monthKey": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "completedLessonsCount": { "type": "integer" },
+        "badges": { "type": "array" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "photoURL",
+        "level",
+        "totalPoints",
+        "lifetimePoints",
+        "weeklyEarned",
+        "monthlyEarned",
+        "weekKey",
+        "monthKey",
+        "completedLessonsCount",
+        "badges",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Lesson": {
+      "title": "Lesson",
+      "description": "Educational English video lesson.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "titleAr": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "descriptionAr": { "type": "string", "maxLength": 1500 },
+        "videoUrl": { "type": "string", "minLength": 5, "maxLength": 1000 },
+        "thumbnailUrl": { "type": "string", "maxLength": 220000 },
+        "level": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "topic": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "teacherNotes": { "type": "string", "maxLength": 2000 },
+        "teacherNotesAr": { "type": "string", "maxLength": 2000 },
+        "points": { "type": "integer" },
+        "durationMinutes": { "type": "integer" },
+        "isPublished": { "type": "boolean" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "title",
+        "titleAr",
+        "description",
+        "descriptionAr",
+        "videoUrl",
+        "thumbnailUrl",
+        "level",
+        "unit",
+        "topic",
+        "teacherNotes",
+        "teacherNotesAr",
+        "points",
+        "durationMinutes",
+        "isPublished",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LessonCompletion": {
+      "title": "LessonCompletion",
+      "description": "Record of a student completing a lesson.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "lessonId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "lessonTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "pointsAwarded": { "type": "integer" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "lessonId", "lessonTitle", "pointsAwarded", "completedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Homework assignment or interactive English quiz.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "titleAr": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "descriptionAr": { "type": "string", "maxLength": 1500 },
+        "type": { "type": "string", "enum": ["quiz", "homework"] },
+        "level": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "points": { "type": "integer" },
+        "dueDate": { "type": "string", "maxLength": 40 },
+        "attachmentUrl": { "type": "string", "maxLength": 1000 },
+        "questions": { "type": "array" },
+        "isPublished": { "type": "boolean" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "title",
+        "titleAr",
+        "description",
+        "descriptionAr",
+        "type",
+        "level",
+        "points",
+        "dueDate",
+        "attachmentUrl",
+        "questions",
+        "isPublished",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TaskSubmission": {
+      "title": "TaskSubmission",
+      "description": "Student submission for a quiz or homework task.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "studentName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "taskTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "taskType": { "type": "string", "enum": ["quiz", "homework"] },
+        "answerText": { "type": "string", "maxLength": 2000 },
+        "selectedAnswers": { "type": "array" },
+        "score": { "type": "integer" },
+        "maxScore": { "type": "integer" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "completed"] },
+        "pointsAwarded": { "type": "integer" },
+        "teacherFeedback": { "type": "string", "maxLength": 500 },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "studentId",
+        "studentName",
+        "taskId",
+        "taskTitle",
+        "taskType",
+        "answerText",
+        "selectedAnswers",
+        "score",
+        "maxScore",
+        "status",
+        "pointsAwarded",
+        "teacherFeedback",
+        "submittedAt",
+        "updatedAt"
+      ]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "Teacher note or general announcement.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "titleAr": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 2500 },
+        "contentAr": { "type": "string", "minLength": 1, "maxLength": 2500 },
+        "targetStudentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "category": { "type": "string", "enum": ["announcement", "note"] },
+        "attachmentUrl": { "type": "string", "maxLength": 220000 },
+        "attachmentType": { "type": "string", "enum": ["none", "link", "image", "file"] },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "title",
+        "titleAr",
+        "content",
+        "contentAr",
+        "targetStudentId",
+        "category",
+        "attachmentUrl",
+        "attachmentType",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "NoteRead": {
+      "title": "NoteRead",
+      "description": "Read receipt for a student note.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "noteId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "readAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "noteId", "readAt"]
+    },
+    "Reward": {
+      "title": "Reward",
+      "description": "Reward item in the academy rewards store.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "titleAr": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "descriptionAr": { "type": "string", "maxLength": 500 },
+        "costPoints": { "type": "integer" },
+        "category": { "type": "string", "enum": ["physical", "virtual"] },
+        "imageUrl": { "type": "string", "maxLength": 220000 },
+        "isAvailable": { "type": "boolean" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "title",
+        "titleAr",
+        "description",
+        "descriptionAr",
+        "costPoints",
+        "category",
+        "imageUrl",
+        "isAvailable",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Redemption": {
+      "title": "Redemption",
+      "description": "Student request to redeem points for a reward.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "studentName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "rewardId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rewardTitle": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "rewardTitleAr": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "costPoints": { "type": "integer" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "teacherNote": { "type": "string", "maxLength": 300 },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "studentId",
+        "studentName",
+        "rewardId",
+        "rewardTitle",
+        "rewardTitleAr",
+        "costPoints",
+        "status",
+        "teacherNote",
+        "requestedAt",
+        "updatedAt"
+      ]
+    },
+    "PointTransaction": {
+      "title": "PointTransaction",
+      "description": "Immutable ledger record for points earned, deducted, or redeemed.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "studentName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "amount": { "type": "integer" },
+        "type": { "type": "string", "enum": ["earn", "redeem", "deduct", "bonus"] },
+        "sourceType": { "type": "string", "enum": ["lesson", "quiz", "homework", "reward", "teacher"] },
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "reasonAr": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "weekKey": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "monthKey": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "studentId",
+        "studentName",
+        "amount",
+        "type",
+        "sourceType",
+        "sourceId",
+        "reason",
+        "reasonAr",
+        "weekKey",
+        "monthKey",
+        "createdBy",
+        "createdAt"
+      ]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Push and in-app notification item.",
+      "type": "object",
+      "properties": {
+        "targetStudentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "titleAr": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "bodyAr": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "type": { "type": "string", "enum": ["video", "note", "task", "announcement", "points", "reward"] },
+        "linkTab": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "targetStudentId",
+        "title",
+        "titleAr",
+        "body",
+        "bodyAr",
+        "type",
+        "linkTab",
+        "createdBy",
+        "createdAt"
+      ]
+    },
+    "NotificationRead": {
+      "title": "NotificationRead",
+      "description": "Read receipt for a notification.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "notifId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "readAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "notifId", "readAt"]
+    }
+  },
+  "firestore": {
+    "/teachers/{teacherId}": {
+      "schema": { "$ref": "#/entities/Teacher" },
+      "description": "Authorized teachers with access to the teacher dashboard."
+    },
+    "/user_private/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Isolated private user preferences and PII."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "Public-within-academy student gamification profiles."
+    },
+    "/lessons/{lessonId}": {
+      "schema": { "$ref": "#/entities/Lesson" },
+      "description": "Educational English video lessons."
+    },
+    "/lesson_completions/{completionId}": {
+      "schema": { "$ref": "#/entities/LessonCompletion" },
+      "description": "Lesson completion records keyed by studentId_lessonId."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Homework assignments and interactive quizzes."
+    },
+    "/task_submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/TaskSubmission" },
+      "description": "Student quiz and homework submissions keyed by studentId_taskId."
+    },
+    "/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/Note" },
+      "description": "Teacher notes and general announcements."
+    },
+    "/note_reads/{readId}": {
+      "schema": { "$ref": "#/entities/NoteRead" },
+      "description": "Student read receipts for notes."
+    },
+    "/rewards/{rewardId}": {
+      "schema": { "$ref": "#/entities/Reward" },
+      "description": "Rewards available in the Rewards Store."
+    },
+    "/redemptions/{redemptionId}": {
+      "schema": { "$ref": "#/entities/Redemption" },
+      "description": "Student reward redemption requests."
+    },
+    "/point_transactions/{txId}": {
+      "schema": { "$ref": "#/entities/PointTransaction" },
+      "description": "Audit ledger of all point movements."
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Real-time notifications for students."
+    },
+    "/notification_reads/{readId}": {
+      "schema": { "$ref": "#/entities/NotificationRead" },
+      "description": "Student read receipts for notifications."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Ms nardeen Academy",
+  "description": "Interactive gamified English learning academy for young learners with video lessons, quizzes, leaderboards, and rewards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,1023 @@
+import { User } from 'firebase/auth';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
+import {
+  BOOTSTRAP_ADMIN_EMAIL,
+  db,
+  handleFirestoreError,
+  OperationType,
+} from '../lib/firebase';
+import {
+  evaluateAutoBadges,
+  getMonthKey,
+  getSuggestedLevel,
+  getWeekKey,
+  TRANSPARENT_AVATAR_PRESETS,
+} from '../lib/gamification';
+import {
+  AcademyNote,
+  AcademyTask,
+  Language,
+  Lesson,
+  QuizQuestion,
+  RedemptionRequest,
+  RewardItem,
+  StudentProfile,
+  TaskSubmission,
+  ThemeMode,
+  UserPrivate,
+  UserRole,
+  VALIDATION_LIMITS,
+} from '../types';
+
+function clampStr(val: string, max: number): string {
+  return val.trim().slice(0, max);
+}
+
+function makeTxId(prefix: string): string {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${prefix}_${Date.now()}_${rand}`.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+export async function bootstrapUserSession(user: User): Promise<{
+  role: UserRole;
+  userPrivate: UserPrivate;
+  studentProfile: StudentProfile | null;
+  needsOnboarding: boolean;
+}> {
+  const uid = user.uid;
+  const email = (user.email || '').trim().toLowerCase();
+  const isBootstrapTeacher = email === BOOTSTRAP_ADMIN_EMAIL && user.emailVerified;
+
+  let isRegisteredTeacher = isBootstrapTeacher;
+  if (!isRegisteredTeacher && user.emailVerified) {
+    try {
+      const teacherSnap = await getDoc(doc(db, 'teachers', uid));
+      if (teacherSnap.exists()) {
+        isRegisteredTeacher = true;
+      }
+    } catch {
+      // Non-teachers cannot read missing teacher docs or only own doc; safe fallback
+    }
+  }
+
+  const role: UserRole = isRegisteredTeacher ? 'teacher' : 'student';
+  const privateRef = doc(db, 'user_private', uid);
+  let userPrivate: UserPrivate;
+
+  try {
+    const privateSnap = await getDoc(privateRef);
+    if (!privateSnap.exists()) {
+      const payload: UserPrivate = {
+        uid,
+        email: clampStr(user.email || `${uid}@academy.local`, 254),
+        role,
+        preferredLanguage: 'ar',
+        preferredTheme: 'light',
+        notificationsEnabled: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(privateRef, payload);
+      userPrivate = { ...payload };
+    } else {
+      const existing = privateSnap.data() as UserPrivate;
+      if (existing.role !== role && isRegisteredTeacher) {
+        await updateDoc(privateRef, { role: 'teacher', updatedAt: serverTimestamp() });
+        userPrivate = { ...existing, role: 'teacher' };
+      } else {
+        userPrivate = existing;
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `user_private/${uid}`);
+  }
+
+  if (role === 'teacher') {
+    return { role, userPrivate, studentProfile: null, needsOnboarding: false };
+  }
+
+  const studentRef = doc(db, 'students', uid);
+  try {
+    const studentSnap = await getDoc(studentRef);
+    if (!studentSnap.exists()) {
+      return { role, userPrivate, studentProfile: null, needsOnboarding: true };
+    }
+    return {
+      role,
+      userPrivate,
+      studentProfile: studentSnap.data() as StudentProfile,
+      needsOnboarding: false,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `students/${uid}`);
+  }
+}
+
+export async function completeStudentRegistration(
+  user: User,
+  displayName: string,
+  photoURL: string
+): Promise<StudentProfile> {
+  const uid = user.uid;
+  const studentRef = doc(db, 'students', uid);
+  const fallbackAvatar =
+    TRANSPARENT_AVATAR_PRESETS[uid.charCodeAt(0) % TRANSPARENT_AVATAR_PRESETS.length].url;
+
+  const newStudent: StudentProfile = {
+    uid,
+    displayName: clampStr(displayName || user.displayName || 'New Learner', VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+    photoURL: clampStr(photoURL || user.photoURL || fallbackAvatar, VALIDATION_LIMITS.PHOTO_URL_MAX),
+    level: 'Beginner',
+    totalPoints: 0,
+    lifetimePoints: 0,
+    weeklyEarned: 0,
+    monthlyEarned: 0,
+    weekKey: getWeekKey(),
+    monthKey: getMonthKey(),
+    completedLessonsCount: 0,
+    badges: [],
+    isActive: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(studentRef, newStudent);
+    return newStudent;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, `students/${uid}`);
+  }
+}
+
+export async function updateUserPreferences(
+  uid: string,
+  prefs: Partial<{
+    preferredLanguage: Language;
+    preferredTheme: ThemeMode;
+    notificationsEnabled: boolean;
+    fcmToken: string;
+  }>
+): Promise<void> {
+  const path = `user_private/${uid}`;
+  try {
+    await updateDoc(doc(db, 'user_private', uid), {
+      ...prefs,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function updateOwnStudentProfile(
+  uid: string,
+  displayName: string,
+  photoURL: string
+): Promise<void> {
+  const path = `students/${uid}`;
+  try {
+    await updateDoc(doc(db, 'students', uid), {
+      displayName: clampStr(displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      photoURL: clampStr(photoURL, VALIDATION_LIMITS.PHOTO_URL_MAX),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function completeLessonAtomically(
+  student: StudentProfile,
+  lesson: Lesson
+): Promise<string[]> {
+  const uid = student.uid;
+  const completionId = `${uid}_${lesson.id}`;
+  const txId = makeTxId('lsn');
+  const currentWeek = getWeekKey();
+  const currentMonth = getMonthKey();
+  const pts = Math.max(0, Math.min(1000, Math.round(lesson.points)));
+
+  const nextWeekly = student.weekKey === currentWeek ? student.weeklyEarned + pts : pts;
+  const nextMonthly = student.monthKey === currentMonth ? student.monthlyEarned + pts : pts;
+  const nextTotal = student.totalPoints + pts;
+  const nextLifetime = student.lifetimePoints + pts;
+  const nextLessonsCount = student.completedLessonsCount + 1;
+  const nextBadges = evaluateAutoBadges(student.badges, {
+    completedLessonsCount: nextLessonsCount,
+    lifetimePoints: nextLifetime,
+  });
+
+  const batch = writeBatch(db);
+
+  batch.set(doc(db, 'lesson_completions', completionId), {
+    studentId: uid,
+    lessonId: lesson.id,
+    lessonTitle: clampStr(lesson.title, VALIDATION_LIMITS.TITLE_MAX),
+    pointsAwarded: pts,
+    completedAt: serverTimestamp(),
+  });
+
+  batch.set(doc(db, 'point_transactions', txId), {
+    studentId: uid,
+    studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+    amount: pts,
+    type: 'earn',
+    sourceType: 'lesson',
+    sourceId: lesson.id,
+    reason: clampStr(`Completed lesson: ${lesson.title}`, VALIDATION_LIMITS.REASON_MAX),
+    reasonAr: clampStr(`إتمام درس: ${lesson.titleAr}`, VALIDATION_LIMITS.REASON_MAX),
+    weekKey: currentWeek,
+    monthKey: currentMonth,
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+  });
+
+  batch.update(doc(db, 'students', uid), {
+    totalPoints: nextTotal,
+    lifetimePoints: nextLifetime,
+    weeklyEarned: nextWeekly,
+    monthlyEarned: nextMonthly,
+    weekKey: currentWeek,
+    monthKey: currentMonth,
+    completedLessonsCount: nextLessonsCount,
+    badges: nextBadges,
+    lastTxId: txId,
+    updatedAt: serverTimestamp(),
+  });
+
+  try {
+    await batch.commit();
+    return nextBadges.filter((b) => !student.badges.includes(b));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `lesson_completions/${completionId}`);
+  }
+}
+
+export async function submitQuizAtomically(
+  student: StudentProfile,
+  task: AcademyTask,
+  selectedAnswers: number[]
+): Promise<{ score: number; maxScore: number; pointsAwarded: number; newBadges: string[] }> {
+  const uid = student.uid;
+  const subId = `${uid}_${task.id}`;
+  const txId = makeTxId('quiz');
+  const maxScore = Math.max(1, task.questions.length);
+
+  let correctCount = 0;
+  task.questions.forEach((q, idx) => {
+    if (selectedAnswers[idx] === q.correctIndex) {
+      correctCount += 1;
+    }
+  });
+
+  const ratio = correctCount / maxScore;
+  const pointsAwarded = Math.max(0, Math.min(task.points, Math.round(task.points * ratio)));
+
+  const currentWeek = getWeekKey();
+  const currentMonth = getMonthKey();
+  const nextWeekly =
+    student.weekKey === currentWeek ? student.weeklyEarned + pointsAwarded : pointsAwarded;
+  const nextMonthly =
+    student.monthKey === currentMonth ? student.monthlyEarned + pointsAwarded : pointsAwarded;
+  const nextTotal = student.totalPoints + pointsAwarded;
+  const nextLifetime = student.lifetimePoints + pointsAwarded;
+  const nextBadges = evaluateAutoBadges(student.badges, {
+    completedLessonsCount: student.completedLessonsCount,
+    lifetimePoints: nextLifetime,
+    didQuiz: true,
+  });
+
+  const batch = writeBatch(db);
+
+  batch.set(doc(db, 'task_submissions', subId), {
+    studentId: uid,
+    studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+    taskId: task.id,
+    taskTitle: clampStr(task.title, VALIDATION_LIMITS.TITLE_MAX),
+    taskType: 'quiz',
+    answerText: `${correctCount}/${maxScore}`,
+    selectedAnswers: selectedAnswers.slice(0, 20),
+    score: correctCount,
+    maxScore,
+    status: 'completed',
+    pointsAwarded,
+    teacherFeedback: '',
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  batch.set(doc(db, 'point_transactions', txId), {
+    studentId: uid,
+    studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+    amount: pointsAwarded,
+    type: 'earn',
+    sourceType: 'quiz',
+    sourceId: task.id,
+    reason: clampStr(
+      `Quiz: ${task.title} (${correctCount}/${maxScore})`,
+      VALIDATION_LIMITS.REASON_MAX
+    ),
+    reasonAr: clampStr(
+      `اختبار: ${task.titleAr} (${correctCount}/${maxScore})`,
+      VALIDATION_LIMITS.REASON_MAX
+    ),
+    weekKey: currentWeek,
+    monthKey: currentMonth,
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+  });
+
+  batch.update(doc(db, 'students', uid), {
+    totalPoints: nextTotal,
+    lifetimePoints: nextLifetime,
+    weeklyEarned: nextWeekly,
+    monthlyEarned: nextMonthly,
+    weekKey: currentWeek,
+    monthKey: currentMonth,
+    badges: nextBadges,
+    lastTxId: txId,
+    updatedAt: serverTimestamp(),
+  });
+
+  try {
+    await batch.commit();
+    return {
+      score: correctCount,
+      maxScore,
+      pointsAwarded,
+      newBadges: nextBadges.filter((b) => !student.badges.includes(b)),
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `task_submissions/${subId}`);
+  }
+}
+
+export async function submitHomework(
+  student: StudentProfile,
+  task: AcademyTask,
+  answerText: string
+): Promise<void> {
+  const subId = `${student.uid}_${task.id}`;
+  try {
+    await setDoc(doc(db, 'task_submissions', subId), {
+      studentId: student.uid,
+      studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      taskId: task.id,
+      taskTitle: clampStr(task.title, VALIDATION_LIMITS.TITLE_MAX),
+      taskType: 'homework',
+      answerText: clampStr(answerText, 2000),
+      selectedAnswers: [],
+      score: 0,
+      maxScore: 100,
+      status: 'pending',
+      pointsAwarded: 0,
+      teacherFeedback: '',
+      submittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, `task_submissions/${subId}`);
+  }
+}
+
+export async function requestRewardRedemption(
+  student: StudentProfile,
+  reward: RewardItem
+): Promise<void> {
+  const ref = doc(collection(db, 'redemptions'));
+  try {
+    await setDoc(ref, {
+      studentId: student.uid,
+      studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      rewardId: reward.id,
+      rewardTitle: clampStr(reward.title, VALIDATION_LIMITS.REWARD_TITLE_MAX),
+      rewardTitleAr: clampStr(reward.titleAr, VALIDATION_LIMITS.REWARD_TITLE_MAX),
+      costPoints: reward.costPoints,
+      status: 'pending',
+      teacherNote: '',
+      requestedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'redemptions');
+  }
+}
+
+export async function markNoteRead(studentId: string, noteId: string): Promise<void> {
+  const readId = `${studentId}_${noteId}`;
+  try {
+    await setDoc(doc(db, 'note_reads', readId), {
+      studentId,
+      noteId,
+      readAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, `note_reads/${readId}`);
+  }
+}
+
+export async function markNotificationRead(studentId: string, notifId: string): Promise<void> {
+  const readId = `${studentId}_${notifId}`;
+  try {
+    await setDoc(doc(db, 'notification_reads', readId), {
+      studentId,
+      notifId,
+      readAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, `notification_reads/${readId}`);
+  }
+}
+
+// ==========================================
+// TEACHER DASHBOARD OPERATIONS
+// ==========================================
+
+export async function createOrUpdateLesson(
+  teacherUid: string,
+  data: {
+    id?: string;
+    title: string;
+    titleAr: string;
+    description: string;
+    descriptionAr: string;
+    videoUrl: string;
+    thumbnailUrl: string;
+    level: string;
+    unit: string;
+    topic: string;
+    teacherNotes: string;
+    teacherNotesAr: string;
+    points: number;
+    durationMinutes: number;
+    isPublished: boolean;
+  }
+): Promise<void> {
+  const isEdit = Boolean(data.id);
+  const ref = data.id ? doc(db, 'lessons', data.id) : doc(collection(db, 'lessons'));
+
+  const payload = {
+    title: clampStr(data.title, VALIDATION_LIMITS.TITLE_MAX),
+    titleAr: clampStr(data.titleAr || data.title, VALIDATION_LIMITS.TITLE_MAX),
+    description: clampStr(data.description, VALIDATION_LIMITS.DESCRIPTION_MAX),
+    descriptionAr: clampStr(data.descriptionAr || data.description, VALIDATION_LIMITS.DESCRIPTION_MAX),
+    videoUrl: clampStr(data.videoUrl, VALIDATION_LIMITS.VIDEO_URL_MAX),
+    thumbnailUrl: clampStr(data.thumbnailUrl, VALIDATION_LIMITS.PHOTO_URL_MAX),
+    level: clampStr(data.level || 'Beginner', VALIDATION_LIMITS.LEVEL_MAX),
+    unit: clampStr(data.unit || 'Unit 1', 60),
+    topic: clampStr(data.topic || 'Phonics', 60),
+    teacherNotes: clampStr(data.teacherNotes, VALIDATION_LIMITS.TEACHER_NOTES_MAX),
+    teacherNotesAr: clampStr(data.teacherNotesAr || data.teacherNotes, VALIDATION_LIMITS.TEACHER_NOTES_MAX),
+    points: Math.max(0, Math.min(1000, Math.round(data.points))),
+    durationMinutes: Math.max(1, Math.min(300, Math.round(data.durationMinutes))),
+    isPublished: data.isPublished,
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    if (isEdit) {
+      await updateDoc(ref, payload);
+    } else {
+      const batch = writeBatch(db);
+      batch.set(ref, {
+        ...payload,
+        createdBy: teacherUid,
+        createdAt: serverTimestamp(),
+      });
+      if (data.isPublished) {
+        const notifRef = doc(collection(db, 'notifications'));
+        batch.set(notifRef, {
+          targetStudentId: 'all',
+          title: clampStr(`New Video Lesson: ${payload.title}`, VALIDATION_LIMITS.TITLE_MAX),
+          titleAr: clampStr(`درس فيديو جديد: ${payload.titleAr}`, VALIDATION_LIMITS.TITLE_MAX),
+          body: clampStr(
+            `Watch now to earn ${payload.points} points!`,
+            VALIDATION_LIMITS.NOTIF_BODY_MAX
+          ),
+          bodyAr: clampStr(
+            `شاهد الدرس الآن واحصل على ${payload.points} نقطة!`,
+            VALIDATION_LIMITS.NOTIF_BODY_MAX
+          ),
+          type: 'video',
+          linkTab: 'lessons',
+          createdBy: teacherUid,
+          createdAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  } catch (error) {
+    handleFirestoreError(error, isEdit ? OperationType.UPDATE : OperationType.CREATE, 'lessons');
+  }
+}
+
+export async function deleteLesson(lessonId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'lessons', lessonId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `lessons/${lessonId}`);
+  }
+}
+
+export async function createOrUpdateTask(
+  teacherUid: string,
+  data: {
+    id?: string;
+    title: string;
+    titleAr: string;
+    description: string;
+    descriptionAr: string;
+    type: 'quiz' | 'homework';
+    level: string;
+    points: number;
+    dueDate: string;
+    attachmentUrl: string;
+    questions: QuizQuestion[];
+    isPublished: boolean;
+  }
+): Promise<void> {
+  const isEdit = Boolean(data.id);
+  const ref = data.id ? doc(db, 'tasks', data.id) : doc(collection(db, 'tasks'));
+
+  const payload = {
+    title: clampStr(data.title, VALIDATION_LIMITS.TITLE_MAX),
+    titleAr: clampStr(data.titleAr || data.title, VALIDATION_LIMITS.TITLE_MAX),
+    description: clampStr(data.description, VALIDATION_LIMITS.DESCRIPTION_MAX),
+    descriptionAr: clampStr(data.descriptionAr || data.description, VALIDATION_LIMITS.DESCRIPTION_MAX),
+    type: data.type,
+    level: clampStr(data.level || 'Beginner', VALIDATION_LIMITS.LEVEL_MAX),
+    points: Math.max(0, Math.min(1000, Math.round(data.points))),
+    dueDate: clampStr(data.dueDate, 40),
+    attachmentUrl: clampStr(data.attachmentUrl, 1000),
+    questions: data.type === 'quiz' ? data.questions.slice(0, 20) : [],
+    isPublished: data.isPublished,
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    if (isEdit) {
+      await updateDoc(ref, payload);
+    } else {
+      const batch = writeBatch(db);
+      batch.set(ref, {
+        ...payload,
+        createdBy: teacherUid,
+        createdAt: serverTimestamp(),
+      });
+      if (data.isPublished) {
+        batch.set(doc(collection(db, 'notifications')), {
+          targetStudentId: 'all',
+          title: clampStr(`New ${data.type === 'quiz' ? 'Quiz' : 'Homework'}: ${payload.title}`, VALIDATION_LIMITS.TITLE_MAX),
+          titleAr: clampStr(`${data.type === 'quiz' ? 'اختبار' : 'واجب'} جديد: ${payload.titleAr}`, VALIDATION_LIMITS.TITLE_MAX),
+          body: clampStr(`Complete to earn up to ${payload.points} points!`, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+          bodyAr: clampStr(`أنجز المهمة الآن واحصل على ${payload.points} نقطة!`, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+          type: 'task',
+          linkTab: 'tasks',
+          createdBy: teacherUid,
+          createdAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  } catch (error) {
+    handleFirestoreError(error, isEdit ? OperationType.UPDATE : OperationType.CREATE, 'tasks');
+  }
+}
+
+export async function deleteTask(taskId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'tasks', taskId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `tasks/${taskId}`);
+  }
+}
+
+export async function gradeHomeworkSubmission(
+  teacherUid: string,
+  submission: TaskSubmission,
+  student: StudentProfile,
+  decision: 'approved' | 'rejected',
+  pointsToAward: number,
+  feedback: string
+): Promise<void> {
+  const batch = writeBatch(db);
+  const subRef = doc(db, 'task_submissions', submission.id);
+  const awarded = decision === 'approved' ? Math.max(0, Math.min(1000, Math.round(pointsToAward))) : 0;
+
+  batch.update(subRef, {
+    status: decision,
+    pointsAwarded: awarded,
+    teacherFeedback: clampStr(feedback, VALIDATION_LIMITS.FEEDBACK_MAX),
+    updatedAt: serverTimestamp(),
+  });
+
+  if (decision === 'approved' && awarded > 0) {
+    const txId = makeTxId('hw');
+    const currentWeek = getWeekKey();
+    const currentMonth = getMonthKey();
+    const nextWeekly = student.weekKey === currentWeek ? student.weeklyEarned + awarded : awarded;
+    const nextMonthly = student.monthKey === currentMonth ? student.monthlyEarned + awarded : awarded;
+
+    batch.set(doc(db, 'point_transactions', txId), {
+      studentId: student.uid,
+      studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      amount: awarded,
+      type: 'earn',
+      sourceType: 'homework',
+      sourceId: submission.taskId,
+      reason: clampStr(`Homework approved: ${submission.taskTitle}`, VALIDATION_LIMITS.REASON_MAX),
+      reasonAr: clampStr(`اعتماد الواجب: ${submission.taskTitle}`, VALIDATION_LIMITS.REASON_MAX),
+      weekKey: currentWeek,
+      monthKey: currentMonth,
+      createdBy: teacherUid,
+      createdAt: serverTimestamp(),
+    });
+
+    batch.update(doc(db, 'students', student.uid), {
+      totalPoints: student.totalPoints + awarded,
+      lifetimePoints: student.lifetimePoints + awarded,
+      weeklyEarned: nextWeekly,
+      monthlyEarned: nextMonthly,
+      weekKey: currentWeek,
+      monthKey: currentMonth,
+      lastTxId: txId,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  batch.set(doc(collection(db, 'notifications')), {
+    targetStudentId: student.uid,
+    title: decision === 'approved' ? 'Homework Approved!' : 'Homework Reviewed',
+    titleAr: decision === 'approved' ? 'تم اعتماد واجبك!' : 'تمت مراجعة واجبك',
+    body:
+      decision === 'approved'
+        ? `You earned +${awarded} points for "${submission.taskTitle}".`
+        : `Ms Nardeen reviewed "${submission.taskTitle}". Check feedback.`,
+    bodyAr:
+      decision === 'approved'
+        ? `حصلت على +${awarded} نقطة عن واجب "${submission.taskTitle}".`
+        : `راجعت Ms Nardeen واجب "${submission.taskTitle}". تفقد الملاحظة.`,
+    type: 'points',
+    linkTab: 'tasks',
+    createdBy: teacherUid,
+    createdAt: serverTimestamp(),
+  });
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `task_submissions/${submission.id}`);
+  }
+}
+
+export async function publishNoteOrAnnouncement(
+  teacherUid: string,
+  data: {
+    title: string;
+    titleAr: string;
+    content: string;
+    contentAr: string;
+    targetStudentId: string;
+    category: 'announcement' | 'note';
+    attachmentUrl: string;
+    attachmentType: 'none' | 'link' | 'image' | 'file';
+  }
+): Promise<void> {
+  const noteRef = doc(collection(db, 'notes'));
+  const batch = writeBatch(db);
+
+  const payload = {
+    title: clampStr(data.title, VALIDATION_LIMITS.TITLE_MAX),
+    titleAr: clampStr(data.titleAr || data.title, VALIDATION_LIMITS.TITLE_MAX),
+    content: clampStr(data.content, VALIDATION_LIMITS.NOTE_CONTENT_MAX),
+    contentAr: clampStr(data.contentAr || data.content, VALIDATION_LIMITS.NOTE_CONTENT_MAX),
+    targetStudentId: data.targetStudentId || 'all',
+    category: data.category,
+    attachmentUrl: clampStr(data.attachmentUrl, VALIDATION_LIMITS.ATTACHMENT_URL_MAX),
+    attachmentType: data.attachmentType,
+    createdBy: teacherUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  batch.set(noteRef, payload);
+  batch.set(doc(collection(db, 'notifications')), {
+    targetStudentId: payload.targetStudentId,
+    title: clampStr(
+      `${data.category === 'announcement' ? 'Announcement' : 'Teacher Note'}: ${payload.title}`,
+      VALIDATION_LIMITS.TITLE_MAX
+    ),
+    titleAr: clampStr(
+      `${data.category === 'announcement' ? 'إعلان جديد' : 'ملاحظة جديدة'}: ${payload.titleAr}`,
+      VALIDATION_LIMITS.TITLE_MAX
+    ),
+    body: clampStr(payload.content, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+    bodyAr: clampStr(payload.contentAr, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+    type: data.category === 'announcement' ? 'announcement' : 'note',
+    linkTab: 'notes',
+    createdBy: teacherUid,
+    createdAt: serverTimestamp(),
+  });
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'notes');
+  }
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'notes', noteId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `notes/${noteId}`);
+  }
+}
+
+export async function createOrUpdateReward(
+  teacherUid: string,
+  data: {
+    id?: string;
+    title: string;
+    titleAr: string;
+    description: string;
+    descriptionAr: string;
+    costPoints: number;
+    category: 'physical' | 'virtual';
+    imageUrl: string;
+    isAvailable: boolean;
+  }
+): Promise<void> {
+  const isEdit = Boolean(data.id);
+  const ref = data.id ? doc(db, 'rewards', data.id) : doc(collection(db, 'rewards'));
+  const payload = {
+    title: clampStr(data.title, VALIDATION_LIMITS.REWARD_TITLE_MAX),
+    titleAr: clampStr(data.titleAr || data.title, VALIDATION_LIMITS.REWARD_TITLE_MAX),
+    description: clampStr(data.description, VALIDATION_LIMITS.REWARD_DESC_MAX),
+    descriptionAr: clampStr(data.descriptionAr || data.description, VALIDATION_LIMITS.REWARD_DESC_MAX),
+    costPoints: Math.max(1, Math.min(100000, Math.round(data.costPoints))),
+    category: data.category,
+    imageUrl: clampStr(data.imageUrl, VALIDATION_LIMITS.PHOTO_URL_MAX),
+    isAvailable: data.isAvailable,
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    if (isEdit) {
+      await updateDoc(ref, payload);
+    } else {
+      await setDoc(ref, {
+        ...payload,
+        createdBy: teacherUid,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, isEdit ? OperationType.UPDATE : OperationType.CREATE, 'rewards');
+  }
+}
+
+export async function deleteReward(rewardId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'rewards', rewardId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `rewards/${rewardId}`);
+  }
+}
+
+export async function reviewRedemptionRequest(
+  teacherUid: string,
+  request: RedemptionRequest,
+  student: StudentProfile,
+  decision: 'approved' | 'rejected',
+  teacherNote: string
+): Promise<void> {
+  if (decision === 'approved' && student.totalPoints < request.costPoints) {
+    throw new Error('Student no longer has enough points for this reward.');
+  }
+
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'redemptions', request.id), {
+    status: decision,
+    teacherNote: clampStr(teacherNote, 300),
+    updatedAt: serverTimestamp(),
+  });
+
+  if (decision === 'approved') {
+    const txId = makeTxId('rdm');
+    const currentWeek = getWeekKey();
+    const currentMonth = getMonthKey();
+
+    batch.set(doc(db, 'point_transactions', txId), {
+      studentId: student.uid,
+      studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      amount: -request.costPoints,
+      type: 'redeem',
+      sourceType: 'reward',
+      sourceId: request.rewardId,
+      reason: clampStr(`Redeemed reward: ${request.rewardTitle}`, VALIDATION_LIMITS.REASON_MAX),
+      reasonAr: clampStr(`استبدال هدية: ${request.rewardTitleAr}`, VALIDATION_LIMITS.REASON_MAX),
+      weekKey: currentWeek,
+      monthKey: currentMonth,
+      createdBy: teacherUid,
+      createdAt: serverTimestamp(),
+    });
+
+    batch.update(doc(db, 'students', student.uid), {
+      totalPoints: Math.max(0, student.totalPoints - request.costPoints),
+      lastTxId: txId,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  batch.set(doc(collection(db, 'notifications')), {
+    targetStudentId: student.uid,
+    title: decision === 'approved' ? 'Reward Approved!' : 'Reward Request Update',
+    titleAr: decision === 'approved' ? 'تمت الموافقة على هديتك!' : 'تحديث بخصوص طلب الهدية',
+    body:
+      decision === 'approved'
+        ? `Your redemption for "${request.rewardTitle}" was approved!`
+        : `Your request for "${request.rewardTitle}" was declined. No points were deducted.`,
+    bodyAr:
+      decision === 'approved'
+        ? `تمت الموافقة على طلب "${request.rewardTitleAr}" وخصم ${request.costPoints} نقطة.`
+        : `تم رفض طلب "${request.rewardTitleAr}" ولم يتم خصم أي نقاط.`,
+    type: 'reward',
+    linkTab: 'rewards',
+    createdBy: teacherUid,
+    createdAt: serverTimestamp(),
+  });
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `redemptions/${request.id}`);
+  }
+}
+
+export async function teacherAdjustStudentPoints(
+  teacherUid: string,
+  student: StudentProfile,
+  delta: number,
+  reason: string
+): Promise<void> {
+  if (delta === 0) return;
+  const txId = makeTxId('adj');
+  const currentWeek = getWeekKey();
+  const currentMonth = getMonthKey();
+
+  const nextTotal = Math.max(0, student.totalPoints + delta);
+  const nextLifetime = delta > 0 ? student.lifetimePoints + delta : student.lifetimePoints;
+  const baseWeekly = student.weekKey === currentWeek ? student.weeklyEarned : 0;
+  const baseMonthly = student.monthKey === currentMonth ? student.monthlyEarned : 0;
+  const nextWeekly = Math.max(0, baseWeekly + delta);
+  const nextMonthly = Math.max(0, baseMonthly + delta);
+  const nextBadges = evaluateAutoBadges(student.badges, {
+    completedLessonsCount: student.completedLessonsCount,
+    lifetimePoints: nextLifetime,
+  });
+
+  const batch = writeBatch(db);
+
+  batch.set(doc(db, 'point_transactions', txId), {
+    studentId: student.uid,
+    studentName: clampStr(student.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+    amount: delta,
+    type: delta > 0 ? 'bonus' : 'deduct',
+    sourceType: 'teacher',
+    sourceId: txId,
+    reason: clampStr(reason, VALIDATION_LIMITS.REASON_MAX),
+    reasonAr: clampStr(reason, VALIDATION_LIMITS.REASON_MAX),
+    weekKey: currentWeek,
+    monthKey: currentMonth,
+    createdBy: teacherUid,
+    createdAt: serverTimestamp(),
+  });
+
+  batch.update(doc(db, 'students', student.uid), {
+    totalPoints: nextTotal,
+    lifetimePoints: nextLifetime,
+    weeklyEarned: nextWeekly,
+    monthlyEarned: nextMonthly,
+    weekKey: currentWeek,
+    monthKey: currentMonth,
+    level: student.level || getSuggestedLevel(nextLifetime),
+    badges: nextBadges,
+    lastTxId: txId,
+    updatedAt: serverTimestamp(),
+  });
+
+  batch.set(doc(collection(db, 'notifications')), {
+    targetStudentId: student.uid,
+    title: delta > 0 ? `You received +${delta} bonus points!` : 'Points Adjustment',
+    titleAr: delta > 0 ? `حصلت على +${delta} نقطة إضافية!` : `تعديل رصيد النقاط (${delta})`,
+    body: clampStr(reason, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+    bodyAr: clampStr(reason, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+    type: 'points',
+    linkTab: 'profile',
+    createdBy: teacherUid,
+    createdAt: serverTimestamp(),
+  });
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `students/${student.uid}`);
+  }
+}
+
+export async function teacherUpdateStudentProfile(
+  studentId: string,
+  updates: {
+    displayName: string;
+    photoURL: string;
+    level: string;
+    badges: string[];
+    isActive: boolean;
+  }
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'students', studentId), {
+      displayName: clampStr(updates.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      photoURL: clampStr(updates.photoURL, VALIDATION_LIMITS.PHOTO_URL_MAX),
+      level: clampStr(updates.level, VALIDATION_LIMITS.LEVEL_MAX),
+      badges: updates.badges.slice(0, 30),
+      isActive: updates.isActive,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `students/${studentId}`);
+  }
+}
+
+export async function teacherCreateStudentProfile(data: {
+  displayName: string;
+  photoURL: string;
+  level: string;
+  initialPoints: number;
+}): Promise<void> {
+  const studentRef = doc(collection(db, 'students'));
+  const pts = Math.max(0, Math.min(100000, Math.round(data.initialPoints)));
+  try {
+    await setDoc(studentRef, {
+      uid: studentRef.id,
+      displayName: clampStr(data.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      photoURL: clampStr(
+        data.photoURL || TRANSPARENT_AVATAR_PRESETS[0].url,
+        VALIDATION_LIMITS.PHOTO_URL_MAX
+      ),
+      level: clampStr(data.level || 'Beginner', VALIDATION_LIMITS.LEVEL_MAX),
+      totalPoints: pts,
+      lifetimePoints: pts,
+      weeklyEarned: pts,
+      monthlyEarned: pts,
+      weekKey: getWeekKey(),
+      monthKey: getMonthKey(),
+      completedLessonsCount: 0,
+      badges: [],
+      isActive: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'students');
+  }
+}
+
+export async function sendCustomNotification(
+  teacherUid: string,
+  data: {
+    targetStudentId: string;
+    title: string;
+    titleAr: string;
+    body: string;
+    bodyAr: string;
+    type: 'video' | 'note' | 'task' | 'announcement' | 'points' | 'reward';
+    linkTab: string;
+  }
+): Promise<void> {
+  try {
+    await setDoc(doc(collection(db, 'notifications')), {
+      targetStudentId: data.targetStudentId || 'all',
+      title: clampStr(data.title, VALIDATION_LIMITS.TITLE_MAX),
+      titleAr: clampStr(data.titleAr || data.title, VALIDATION_LIMITS.TITLE_MAX),
+      body: clampStr(data.body, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+      bodyAr: clampStr(data.bodyAr || data.body, VALIDATION_LIMITS.NOTIF_BODY_MAX),
+      type: data.type,
+      linkTab: data.linkTab || 'home',
+      createdBy: teacherUid,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'notifications');
+  }
+}
