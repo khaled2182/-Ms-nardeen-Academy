@@ -179,7 +179,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
 
               {(error || photoError) && (
-                <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
+                <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 px-4 py-3 text-sm text-rose-700 dark:text-rose-200 whitespace-pre-line select-text break-words">
                   {photoError || error}
                 </div>
               )}

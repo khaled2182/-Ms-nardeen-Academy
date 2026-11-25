@@ -437,8 +437,35 @@ function AcademyApp() {
     setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Google Sign-In failed');
+    } catch (err: unknown) {
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code || '')
+          : '';
+      const rawMessage = err instanceof Error ? err.message : String(err);
+
+      if (code === 'auth/unauthorized-domain' || rawMessage.includes('auth/unauthorized-domain')) {
+        const host = typeof window !== 'undefined' ? window.location.hostname : '';
+        setAuthError(
+          lang === 'ar'
+            ? `النطاق الحالي غير مصرح به في Firebase Authentication:\n${host}\nيرجى إضافة هذا النطاق في Firebase Console ← Authentication ← Settings ← Authorized domains.`
+            : `Current domain is not authorized in Firebase Authentication:\n${host}\nPlease add this domain under Firebase Console → Authentication → Settings → Authorized domains.`
+        );
+      } else if (code === 'auth/popup-blocked') {
+        setAuthError(
+          lang === 'ar'
+            ? 'قام المتصفح بحظر نافذة تسجيل الدخول. يرجى السماح بالنوافذ المنبثقة لهذا الموقع والمحاولة مرة أخرى.'
+            : 'Sign-in popup was blocked by your browser. Please allow popups for this site and try again.'
+        );
+      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setAuthError(
+          lang === 'ar'
+            ? 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية.'
+            : 'The sign-in window was closed before completing sign-in.'
+        );
+      } else {
+        setAuthError(rawMessage || 'Google Sign-In failed');
+      }
     } finally {
       setAuthLoading(false);
     }
