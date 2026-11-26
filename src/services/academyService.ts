@@ -1021,3 +1021,45 @@ export async function sendCustomNotification(
     handleFirestoreError(error, OperationType.CREATE, 'notifications');
   }
 }
+
+export async function getAppIconBranding(): Promise<string> {
+  try {
+    const snap = await getDoc(doc(db, 'app_settings', 'branding'));
+    if (snap.exists()) {
+      const data = snap.data() as { appIconUrl?: string };
+      return typeof data.appIconUrl === 'string' ? data.appIconUrl : '';
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+export async function saveAppIconBranding(teacherUid: string, appIconUrl: string): Promise<void> {
+  try {
+    await setDoc(doc(db, 'app_settings', 'branding'), {
+      appIconUrl: clampStr(appIconUrl, VALIDATION_LIMITS.PHOTO_URL_MAX),
+      updatedBy: teacherUid,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'app_settings/branding');
+  }
+}
+
+export function applyWebAppIconToHead(iconUrl: string): void {
+  if (typeof document === 'undefined') return;
+  const resolvedFavicon = iconUrl || '/favicon.png';
+  const resolvedTouch = iconUrl || '/apple-touch-icon.png';
+
+  const iconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (iconLink) {
+    iconLink.href = resolvedFavicon;
+  }
+
+  const touchLink = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+  if (touchLink) {
+    touchLink.href = resolvedTouch;
+  }
+}
+

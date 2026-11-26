@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
-import { Bell, Check, Globe, LogOut, Moon, Sun } from 'lucide-react';
+import { Bell, Check, Globe, ImagePlus, LogOut, Moon, RotateCcw, Sun } from 'lucide-react';
+import { ASSET_IMAGES, compressTransparentImageFile } from '../lib/gamification';
 import { t } from '../lib/i18n';
 import { AcademyNotification, Language, ThemeMode } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface SettingsViewProps {
   lang: Language;
   theme: ThemeMode;
   email: string;
+  isTeacher?: boolean;
+  appIconUrl?: string;
   notificationsEnabled: boolean;
   notifications: AcademyNotification[];
   readNotifIds: Set<string>;
   onChangeLang: (lang: Language) => Promise<void>;
   onChangeTheme: (theme: ThemeMode) => Promise<void>;
   onEnableNotifications: () => Promise<void>;
+  onUpdateAppIcon?: (iconUrl: string) => Promise<void>;
   onMarkNotificationRead: (notifId: string) => Promise<void>;
   onSignOut: () => void;
 }
@@ -21,16 +26,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   lang,
   theme,
   email,
+  isTeacher = false,
+  appIconUrl = '',
   notificationsEnabled,
   notifications,
   readNotifIds,
   onChangeLang,
   onChangeTheme,
   onEnableNotifications,
+  onUpdateAppIcon,
   onMarkNotificationRead,
   onSignOut,
 }) => {
   const [enabling, setEnabling] = useState(false);
+  const [iconBusy, setIconBusy] = useState(false);
+  const [iconError, setIconError] = useState<string | null>(null);
+
+  const resolvedAppIcon = appIconUrl || ASSET_IMAGES.appIcon;
+
+  const handlePickAppIcon = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onUpdateAppIcon) return;
+    setIconError(null);
+    setIconBusy(true);
+    try {
+      const compressed = await compressTransparentImageFile(file);
+      await onUpdateAppIcon(compressed);
+    } catch (err) {
+      setIconError(
+        err instanceof Error
+          ? err.message
+          : lang === 'ar'
+          ? 'تعذر تحميل صورة الأيقونة'
+          : 'Failed to update app icon'
+      );
+    } finally {
+      setIconBusy(false);
+      e.target.value = '';
+    }
+  };
 
   const browserBlocked =
     typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'denied';
@@ -166,6 +200,87 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             >
               {enabling ? t(lang, 'loadingText') : t(lang, 'enableNotifications')}
             </button>
+          )}
+        </div>
+
+        {/* Web App Icon & Install */}
+        <div className="p-5 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <img
+                src={resolvedAppIcon}
+                alt={t(lang, 'brandName')}
+                referrerPolicy="no-referrer"
+                className="w-12 h-12 rounded-2xl object-cover border border-sky-200 dark:border-sky-800 shadow-sm shrink-0"
+              />
+              <div>
+                <p className="font-bold text-sm text-slate-900 dark:text-white">
+                  {lang === 'ar' ? 'أيقونة وتثبيت تطبيق الويب' : 'Web App Icon & Install'}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {lang === 'ar'
+                    ? 'أضف التطبيق إلى الشاشة الرئيسية بهاتفك أو حاسوبك بهذه الأيقونة'
+                    : 'Install Ms nardeen Academy to your device home screen with this icon'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              <PWAInstallButton lang={lang} />
+            </div>
+          </div>
+
+          {isTeacher && onUpdateAppIcon && (
+            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <ImagePlus className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  {lang === 'ar'
+                    ? 'تخصيص صورة أيقونة تطبيق الويب (للمعلمة):'
+                    : 'Customize Web App Icon image (Teacher):'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <label className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-sky-400 text-xs font-semibold text-sky-700 dark:text-sky-300 cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
+                  <span>
+                    {iconBusy
+                      ? t(lang, 'loadingText')
+                      : lang === 'ar'
+                      ? 'رفع صورة من المعرض'
+                      : 'Upload from Gallery'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePickAppIcon}
+                    disabled={iconBusy}
+                    className="hidden"
+                  />
+                </label>
+                {appIconUrl && (
+                  <button
+                    type="button"
+                    disabled={iconBusy}
+                    onClick={async () => {
+                      setIconBusy(true);
+                      try {
+                        await onUpdateAppIcon('');
+                      } finally {
+                        setIconBusy(false);
+                      }
+                    }}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-rose-600 flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>{lang === 'ar' ? 'الافتراضية' : 'Reset'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {iconError && (
+            <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{iconError}</p>
           )}
         </div>
       </section>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import {
   Bell,
   BookOpen,
@@ -38,15 +38,18 @@ import {
   testConnection,
   triggerLocalPushNotification,
 } from './lib/firebase';
-import { celebrateAchievement, TRANSPARENT_AVATAR_PRESETS } from './lib/gamification';
+import { ASSET_IMAGES, celebrateAchievement, TRANSPARENT_AVATAR_PRESETS } from './lib/gamification';
 import { t } from './lib/i18n';
 import {
+  applyWebAppIconToHead,
   bootstrapUserSession,
   completeLessonAtomically,
   completeStudentRegistration,
+  getAppIconBranding,
   markNoteRead,
   markNotificationRead,
   requestRewardRedemption,
+  saveAppIconBranding,
   submitHomework,
   submitQuizAtomically,
   updateOwnStudentProfile,
@@ -81,6 +84,7 @@ function AcademyApp() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [pendingPhotoURL, setPendingPhotoURL] = useState<string>('');
+  const [customAppIconUrl, setCustomAppIconUrl] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [teacherPreviewStudentMode, setTeacherPreviewStudentMode] = useState(false);
@@ -133,11 +137,20 @@ function AcademyApp() {
     }
   }, [theme]);
 
-  // Startup connection check & SW registration
+  // Startup connection check, SW registration & Web App Icon sync
   useEffect(() => {
     testConnection();
     registerNotificationServiceWorker();
+    getAppIconBranding().then((iconUrl) => {
+      if (iconUrl) {
+        setCustomAppIconUrl(iconUrl);
+      }
+    });
   }, []);
+
+  useEffect(() => {
+    applyWebAppIconToHead(customAppIconUrl);
+  }, [customAppIconUrl]);
 
   // Auth listener & user bootstrap
   useEffect(() => {
@@ -383,6 +396,22 @@ function AcademyApp() {
       )
     );
 
+    // 13. Academy Web App Icon Branding
+    unsubscribers.push(
+      onSnapshot(
+        doc(db, 'app_settings', 'branding'),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as { appIconUrl?: string };
+            setCustomAppIconUrl(typeof data.appIconUrl === 'string' ? data.appIconUrl : '');
+          }
+        },
+        () => {
+          // Optional branding document fallback
+        }
+      )
+    );
+
     return () => {
       unsubscribers.forEach((u) => u());
     };
@@ -531,6 +560,7 @@ function AcademyApp() {
         theme={theme}
         loading={authLoading}
         error={authError}
+        appIconUrl={customAppIconUrl || ASSET_IMAGES.appIcon}
         pendingPhotoURL={pendingPhotoURL}
         onSelectPendingPhoto={setPendingPhotoURL}
         onToggleLang={() => setLang(lang === 'ar' ? 'en' : 'ar')}
@@ -592,13 +622,21 @@ function AcademyApp() {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-white dark:bg-slate-900 border-e border-slate-200/80 dark:border-slate-800 p-5 justify-between z-30">
         <div className="space-y-6">
-          <div className="px-2">
-            <span className="text-xl font-bold tracking-tight text-sky-700 dark:text-sky-300">
-              {t(lang, 'brandName')}
-            </span>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {isTeacher ? t(lang, 'teacherRole') : t(lang, 'studentRole')}
-            </p>
+          <div className="px-2 flex items-center gap-3">
+            <img
+              src={customAppIconUrl || ASSET_IMAGES.appIcon}
+              alt={t(lang, 'brandName')}
+              referrerPolicy="no-referrer"
+              className="w-10 h-10 rounded-xl object-cover border border-sky-200/80 dark:border-sky-800 shadow-sm shrink-0"
+            />
+            <div className="min-w-0">
+              <span className="text-lg font-bold tracking-tight text-sky-700 dark:text-sky-300 block truncate">
+                {t(lang, 'brandName')}
+              </span>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {isTeacher ? t(lang, 'teacherRole') : t(lang, 'studentRole')}
+              </p>
+            </div>
           </div>
 
           <nav className="space-y-1.5">
@@ -704,9 +742,17 @@ function AcademyApp() {
 
       {/* Mobile Compact Top Bar (52px) */}
       <header className="lg:hidden sticky top-0 z-30 h-13 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 flex items-center justify-between gap-4">
-        <span className="text-base font-bold text-sky-700 dark:text-sky-300 truncate">
-          {t(lang, 'brandName')}
-        </span>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <img
+            src={customAppIconUrl || ASSET_IMAGES.appIcon}
+            alt={t(lang, 'brandName')}
+            referrerPolicy="no-referrer"
+            className="w-8 h-8 rounded-lg object-cover border border-sky-200/80 dark:border-sky-800 shrink-0"
+          />
+          <span className="text-base font-bold text-sky-700 dark:text-sky-300 truncate">
+            {t(lang, 'brandName')}
+          </span>
+        </div>
 
         <div className="flex items-center gap-2 shrink-0">
           {isTeacher && (
@@ -917,12 +963,22 @@ function AcademyApp() {
               lang={lang}
               theme={theme}
               email={user.email || ''}
+              isTeacher={isTeacher}
+              appIconUrl={customAppIconUrl}
               notificationsEnabled={Boolean(userPrivate?.notificationsEnabled)}
               notifications={notifications}
               readNotifIds={readNotifIds}
               onChangeLang={handleChangeLang}
               onChangeTheme={handleChangeTheme}
               onEnableNotifications={handleEnableNotifications}
+              onUpdateAppIcon={async (iconUrl) => {
+                await saveAppIconBranding(user.uid, iconUrl);
+                setCustomAppIconUrl(iconUrl);
+                showToast(
+                  'success',
+                  lang === 'ar' ? 'تم تحديث أيقونة التطبيق بنجاح!' : 'Web App icon updated!'
+                );
+              }}
               onMarkNotificationRead={async (notifId) => {
                 if (!user) return;
                 await markNotificationRead(user.uid, notifId);

@@ -2,6 +2,7 @@ import confetti from 'canvas-confetti';
 import { Language, StudentProfile } from '../types';
 
 export const ASSET_IMAGES = {
+  appIcon: '/src/assets/images/academy_app_icon_1795704093803.jpg',
   heroBanner: '/src/assets/images/academy_hero_banner_1795608772262.jpg',
   phonicsCover: '/src/assets/images/lesson_phonics_cover_1795608772906.jpg',
   grammarCover: '/src/assets/images/lesson_grammar_cover_1795608771753.jpg',

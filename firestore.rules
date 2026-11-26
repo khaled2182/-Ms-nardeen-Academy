@@ -351,6 +351,14 @@ service cloud.firestore {
         data.readAt is timestamp;
     }
 
+    function isValidAppBranding(data) {
+      return data.keys().hasAll(['appIconUrl', 'updatedBy', 'updatedAt']) &&
+        data.keys().hasOnly(['appIconUrl', 'updatedBy', 'updatedAt']) &&
+        isValidOptionalString(data.appIconUrl, 220000) &&
+        isValidId(data.updatedBy) &&
+        data.updatedAt is timestamp;
+    }
+
     // Collection Rules
 
     match /teachers/{teacherId} {
@@ -672,6 +680,17 @@ service cloud.firestore {
         incoming().readAt == request.time &&
         exists(/databases/$(database)/documents/notifications/$(incoming().notifId));
       allow update, delete: if false;
+    }
+
+    match /app_settings/{settingId} {
+      allow get: if isValidId(settingId) && settingId == 'branding';
+      allow list: if false;
+      allow create, update: if isValidId(settingId) && settingId == 'branding' &&
+        isTeacher() &&
+        isValidAppBranding(incoming()) &&
+        incoming().updatedBy == request.auth.uid &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(settingId) && settingId == 'branding' && isTeacher();
     }
   }
 }

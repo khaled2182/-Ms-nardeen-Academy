@@ -370,6 +370,17 @@
         "readAt": { "type": "string", "format": "date-time" }
       },
       "required": ["studentId", "notifId", "readAt"]
+    },
+    "AppBranding": {
+      "title": "AppBranding",
+      "description": "Custom web app icon and branding settings managed by the teacher.",
+      "type": "object",
+      "properties": {
+        "appIconUrl": { "type": "string", "maxLength": 220000 },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["appIconUrl", "updatedBy", "updatedAt"]
     }
   },
   "firestore": {
@@ -428,6 +439,10 @@
     "/notification_reads/{readId}": {
       "schema": { "$ref": "#/entities/NotificationRead" },
       "description": "Student read receipts for notifications."
+    },
+    "/app_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/AppBranding" },
+      "description": "Academy-wide public non-PII branding settings such as custom web app icon."
     }
   }
 }
