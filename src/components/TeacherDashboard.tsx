@@ -8,18 +8,23 @@ import {
   Edit3,
   Gift,
   History,
+  Mail,
   Megaphone,
   Plus,
   RotateCcw,
   Send,
+  ShieldCheck,
   Star,
   Trash2,
   Trophy,
   Upload,
+  UserCheck,
+  UserPlus,
   Users,
   X,
   XCircle,
 } from 'lucide-react';
+import { BOOTSTRAP_ADMIN_EMAIL } from '../lib/firebase';
 import {
   ASSET_IMAGES,
   BADGES_CATALOG,
@@ -30,6 +35,7 @@ import {
 } from '../lib/gamification';
 import { t } from '../lib/i18n';
 import {
+  addTeacherInvite,
   createOrUpdateLesson,
   createOrUpdateReward,
   createOrUpdateTask,
@@ -45,6 +51,8 @@ import {
   deleteTaskSubmission,
   gradeHomeworkSubmission,
   publishNoteOrAnnouncement,
+  removeLegacyTeacherDoc,
+  removeTeacherAccount,
   resetAllStudentsPoints,
   resetSingleStudentPoints,
   reviewRedemptionRequest,
@@ -52,6 +60,7 @@ import {
   teacherAdjustStudentPoints,
   teacherCreateStudentProfile,
   teacherUpdateStudentProfile,
+  updateTeacherAccount,
 } from '../services/academyService';
 import {
   AcademyNote,
@@ -65,12 +74,16 @@ import {
   RewardItem,
   StudentProfile,
   TaskSubmission,
+  TeacherInvite,
+  TeacherProfile,
+  TeacherRoleType,
 } from '../types';
 import { AvatarImage, EmptyState } from './SharedUI';
 
 interface TeacherDashboardProps {
   lang: Language;
   teacherUid: string;
+  isAdminTeacher: boolean;
   students: StudentProfile[];
   lessons: Lesson[];
   tasks: AcademyTask[];
@@ -80,21 +93,27 @@ interface TeacherDashboardProps {
   redemptions: RedemptionRequest[];
   transactions: PointTransaction[];
   notifications: AcademyNotification[];
+  teacherInvites: TeacherInvite[];
+  teacherProfiles: TeacherProfile[];
+  requestedTab?: TeacherTab | null;
+  onClearRequestedTab?: () => void;
   onNotifyToast: (type: 'success' | 'error', message: string) => void;
 }
 
-type TeacherTab =
+export type TeacherTab =
   | 'overview'
   | 'students'
   | 'lessons'
   | 'tasks'
   | 'notes'
   | 'rewards'
-  | 'notifications';
+  | 'notifications'
+  | 'teachers';
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   lang,
   teacherUid,
+  isAdminTeacher,
   students,
   lessons,
   tasks,
@@ -104,10 +123,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   redemptions,
   transactions,
   notifications,
+  teacherInvites,
+  teacherProfiles,
+  requestedTab,
+  onClearRequestedTab,
   onNotifyToast,
 }) => {
   const [activeTab, setActiveTab] = useState<TeacherTab>('overview');
   const [busy, setBusy] = useState(false);
+
+  React.useEffect(() => {
+    if (requestedTab) {
+      setActiveTab(requestedTab);
+      onClearRequestedTab?.();
+    }
+  }, [requestedTab, onClearRequestedTab]);
+
+  // Teacher Accounts state
+  const [teacherForm, setTeacherForm] = useState<{
+    email: string;
+    displayName: string;
+    roleType: TeacherRoleType;
+  }>({
+    email: '',
+    displayName: '',
+    roleType: 'teacher',
+  });
+  const [editingTeacherInvite, setEditingTeacherInvite] = useState<TeacherInvite | null>(null);
+  const [editTeacherForm, setEditTeacherForm] = useState<{
+    displayName: string;
+    roleType: TeacherRoleType;
+  }>({
+    displayName: '',
+    roleType: 'teacher',
+  });
+  const [confirmDeleteInvite, setConfirmDeleteInvite] = useState<TeacherInvite | null>(null);
+  const [confirmDeleteLegacyTeacher, setConfirmDeleteLegacyTeacher] = useState<TeacherProfile | null>(null);
 
   // Student modals
   const [studentSearch, setStudentSearch] = useState('');
@@ -304,6 +355,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       badge: pendingRedemptions.length,
     },
     { id: 'notifications', label: t(lang, 'tTabNotifications'), icon: <Bell className="w-4 h-4" /> },
+    {
+      id: 'teachers',
+      label: t(lang, 'tTabTeachers'),
+      icon: <ShieldCheck className="w-4 h-4" />,
+      badge: teacherInvites.length > 0 ? teacherInvites.length : undefined,
+    },
   ];
 
   return (
@@ -1498,6 +1555,401 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               ))
             )}
           </section>
+        </div>
+      )}
+
+      {/* TAB 8: TEACHER ACCOUNTS MANAGEMENT */}
+      {activeTab === 'teachers' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left column: Primary Admin card + Add Teacher form */}
+          <section className="lg:col-span-5 space-y-4">
+            <div className="rounded-3xl bg-gradient-to-br from-sky-50 to-indigo-50/60 dark:from-sky-950/40 dark:to-indigo-950/30 border border-sky-200/80 dark:border-sky-800/70 p-5 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-sky-600 text-white flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-sky-700 dark:text-sky-300">
+                      {lang === 'ar' ? 'حساب الإدارة الرئيسي (محمي)' : 'Primary Admin Account (Protected)'}
+                    </p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate" dir="ltr">
+                      {BOOTSTRAP_ADMIN_EMAIL}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                {lang === 'ar'
+                  ? 'أضيفي بريد Google (Gmail) الخاص بأي معلمة أو مديرة جديدة. عند تسجيل دخولها بحساب Google نفسه ستُفتح لها لوحة المعلمة تلقائيًا.'
+                  : 'Add any new teacher or admin Google (Gmail) email. Once they sign in with that Google account, they automatically receive Teacher Dashboard access.'}
+              </p>
+            </div>
+
+            {isAdminTeacher ? (
+              <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-sky-600" />
+                  <span>{lang === 'ar' ? 'إضافة حساب معلمة جديد' : 'Add New Teacher Account'}</span>
+                </h2>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {lang === 'ar' ? 'البريد الإلكتروني (Google / Gmail)' : 'Google Email Address'}
+                    </label>
+                    <input
+                      type="email"
+                      dir="ltr"
+                      maxLength={96}
+                      placeholder="teacher@gmail.com"
+                      value={teacherForm.email}
+                      onChange={(e) => setTeacherForm({ ...teacherForm, email: e.target.value })}
+                      className="w-full min-h-[44px] px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {lang === 'ar' ? 'اسم المعلمة' : 'Teacher Display Name'}
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={80}
+                      placeholder={lang === 'ar' ? 'مثال: Ms Nardeen' : 'e.g. Ms Nardeen'}
+                      value={teacherForm.displayName}
+                      onChange={(e) => setTeacherForm({ ...teacherForm, displayName: e.target.value })}
+                      className="w-full min-h-[44px] px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {lang === 'ar' ? 'مستوى الصلاحية' : 'Access Level'}
+                    </label>
+                    <select
+                      value={teacherForm.roleType}
+                      onChange={(e) =>
+                        setTeacherForm({ ...teacherForm, roleType: e.target.value as TeacherRoleType })
+                      }
+                      className="w-full min-h-[44px] px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+                    >
+                      <option value="teacher">
+                        {lang === 'ar'
+                          ? 'معلمة (إدارة الدروس والطلاب والنقاط والمتجر)'
+                          : 'Co-Teacher (Lessons, Students, Points & Store)'}
+                      </option>
+                      <option value="admin">
+                        {lang === 'ar'
+                          ? 'مديرة (كامل الصلاحيات + إضافة وحذف المعلمات)'
+                          : 'Admin Teacher (Full Access + Manage Teachers)'}
+                      </option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={busy || !teacherForm.email.trim()}
+                    onClick={() =>
+                      runAction(async () => {
+                        await addTeacherInvite(teacherUid, teacherForm);
+                        setTeacherForm({ email: '', displayName: '', roleType: 'teacher' });
+                      }, lang === 'ar' ? 'تمت إضافة حساب المعلمة بنجاح' : 'Teacher account added')
+                    }
+                    className="w-full min-h-[46px] px-5 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'إضافة حساب المعلمة' : 'Add Teacher Account'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-3xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-5 text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                {lang === 'ar'
+                  ? 'يمكن للإدارة الرئيسية أو المعلمات بصلاحية "مديرة" فقط إضافة أو تعديل أو إزالة حسابات المعلمات.'
+                  : 'Only the Primary Admin or teachers with Admin level can add, edit, or remove teacher accounts.'}
+              </div>
+            )}
+          </section>
+
+          {/* Right column: Active & Invited Teacher Accounts */}
+          <section className="lg:col-span-7 space-y-4">
+            <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-emerald-600" />
+                  <span>{lang === 'ar' ? 'حسابات المعلمات المضافة' : 'Added Teacher Accounts'}</span>
+                </h2>
+                <span className="px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums">
+                  {teacherInvites.length}
+                </span>
+              </div>
+
+              {teacherInvites.length === 0 ? (
+                <EmptyState
+                  icon={<Mail className="w-7 h-7" />}
+                  title={
+                    lang === 'ar'
+                      ? 'لا توجد حسابات معلمات مضافة حتى الآن'
+                      : 'No additional teacher accounts yet'
+                  }
+                  description={
+                    lang === 'ar'
+                      ? 'استخدمي النموذج لإضافة حساب Google الخاص بأي معلمة أخرى.'
+                      : 'Use the form to add another teacher Google email.'
+                  }
+                />
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {teacherInvites.map((invite) => {
+                    const isSelf = Boolean(invite.uid && invite.uid === teacherUid);
+                    return (
+                      <div
+                        key={invite.id}
+                        className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                              {invite.displayName}
+                            </p>
+                            {isSelf && (
+                              <span className="px-2 py-0.5 rounded-lg bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[11px] font-bold">
+                                {lang === 'ar' ? 'حسابك الحالي' : 'You'}
+                              </span>
+                            )}
+                            <span
+                              className={`px-2 py-0.5 rounded-lg text-[11px] font-bold ${
+                                invite.roleType === 'admin'
+                                  ? 'bg-violet-100 dark:bg-violet-950/70 text-violet-700 dark:text-violet-300'
+                                  : 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300'
+                              }`}
+                            >
+                              {invite.roleType === 'admin'
+                                ? lang === 'ar'
+                                  ? 'مديرة'
+                                  : 'Admin'
+                                : lang === 'ar'
+                                ? 'معلمة'
+                                : 'Teacher'}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-lg text-[11px] font-bold ${
+                                invite.status === 'active'
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300'
+                                  : 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300'
+                              }`}
+                            >
+                              {invite.status === 'active'
+                                ? lang === 'ar'
+                                  ? 'مفعّل'
+                                  : 'Active'
+                                : lang === 'ar'
+                                ? 'بانتظار تسجيل الدخول'
+                                : 'Pending Sign-In'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate" dir="ltr">
+                            {invite.email}
+                          </p>
+                        </div>
+
+                        {isAdminTeacher && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingTeacherInvite(invite);
+                                setEditTeacherForm({
+                                  displayName: invite.displayName,
+                                  roleType: invite.roleType,
+                                });
+                              }}
+                              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>{t(lang, 'editLabel')}</span>
+                            </button>
+                            {!isSelf && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => setConfirmDeleteInvite(invite)}
+                                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5"
+                                aria-label={t(lang, 'deleteLabel')}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{lang === 'ar' ? 'إزالة' : 'Remove'}</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Unlinked legacy teacher records, if any */}
+            {teacherProfiles.some((tp) => !teacherInvites.some((inv) => inv.uid === tp.uid)) && (
+              <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {lang === 'ar' ? 'سجلات معلمات مرتبطة بالمعرّف (UID)' : 'Direct UID Teacher Records'}
+                </h3>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {teacherProfiles
+                    .filter((tp) => !teacherInvites.some((inv) => inv.uid === tp.uid))
+                    .map((tp) => (
+                      <div key={tp.uid} className="py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                            {tp.displayName}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate" dir="ltr">
+                            {tp.email || tp.uid}
+                          </p>
+                        </div>
+                        {isAdminTeacher && tp.uid !== teacherUid && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setConfirmDeleteLegacyTeacher(tp)}
+                            className="min-h-[36px] px-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1 shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{lang === 'ar' ? 'إزالة' : 'Remove'}</span>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* MODAL: EDIT TEACHER ACCOUNT */}
+      {editingTeacherInvite && (
+        <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                {lang === 'ar' ? 'تعديل حساب المعلمة' : 'Edit Teacher Account'}
+              </h3>
+              <button type="button" onClick={() => setEditingTeacherInvite(null)} className="p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400" dir="ltr">
+              {editingTeacherInvite.email}
+            </p>
+
+            <input
+              type="text"
+              maxLength={80}
+              value={editTeacherForm.displayName}
+              onChange={(e) => setEditTeacherForm({ ...editTeacherForm, displayName: e.target.value })}
+              placeholder={lang === 'ar' ? 'اسم المعلمة' : 'Teacher Name'}
+              className="w-full min-h-[44px] px-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            />
+
+            <select
+              value={editTeacherForm.roleType}
+              onChange={(e) =>
+                setEditTeacherForm({ ...editTeacherForm, roleType: e.target.value as TeacherRoleType })
+              }
+              className="w-full min-h-[44px] px-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            >
+              <option value="teacher">
+                {lang === 'ar' ? 'معلمة (إدارة المحتوى والطلاب)' : 'Co-Teacher (Content & Students)'}
+              </option>
+              <option value="admin">
+                {lang === 'ar' ? 'مديرة (كامل الصلاحيات + إدارة المعلمات)' : 'Admin Teacher (Full Access)'}
+              </option>
+            </select>
+
+            <button
+              type="button"
+              disabled={busy || !editTeacherForm.displayName.trim()}
+              onClick={() =>
+                runAction(async () => {
+                  await updateTeacherAccount(editingTeacherInvite, editTeacherForm);
+                  setEditingTeacherInvite(null);
+                }, lang === 'ar' ? 'تم تحديث بيانات حساب المعلمة' : 'Teacher account updated')
+              }
+              className="w-full min-h-[46px] rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm disabled:opacity-50"
+            >
+              {t(lang, 'saveChanges')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM REMOVE TEACHER ACCOUNT */}
+      {(confirmDeleteInvite || confirmDeleteLegacyTeacher) && (
+        <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                {lang === 'ar' ? 'تأكيد إزالة حساب المعلمة' : 'Confirm Remove Teacher Account'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDeleteInvite(null);
+                  setConfirmDeleteLegacyTeacher(null);
+                }}
+                className="p-2"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              {lang === 'ar'
+                ? `هل تريدين إزالة حساب "${
+                    confirmDeleteInvite?.displayName || confirmDeleteLegacyTeacher?.displayName
+                  }"؟ سيتم سحب صلاحية لوحة المعلمة فورًا.`
+                : `Remove "${
+                    confirmDeleteInvite?.displayName || confirmDeleteLegacyTeacher?.displayName
+                  }" from teacher accounts? Their Teacher Dashboard access will be revoked immediately.`}
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmDeleteInvite(null);
+                  setConfirmDeleteLegacyTeacher(null);
+                }}
+                className="min-h-[42px] px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+              >
+                {t(lang, 'cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  runAction(async () => {
+                    if (confirmDeleteInvite) {
+                      await removeTeacherAccount(confirmDeleteInvite);
+                      setConfirmDeleteInvite(null);
+                    } else if (confirmDeleteLegacyTeacher) {
+                      await removeLegacyTeacherDoc(confirmDeleteLegacyTeacher.uid);
+                      setConfirmDeleteLegacyTeacher(null);
+                    }
+                  }, lang === 'ar' ? 'تمت إزالة حساب المعلمة' : 'Teacher account removed')
+                }
+                className="min-h-[42px] px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'تأكيد الإزالة' : 'Confirm Remove'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -7,10 +7,30 @@
       "properties": {
         "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
         "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 254 },
+        "roleType": { "type": "string", "enum": ["admin", "teacher"] },
+        "inviteId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "addedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "displayName", "addedBy", "createdAt"]
+    },
+    "TeacherInvite": {
+      "title": "TeacherInvite",
+      "description": "Email-based teacher invitation and access registry managed inside the app.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "minLength": 3, "maxLength": 254 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "roleType": { "type": "string", "enum": ["admin", "teacher"] },
+        "status": { "type": "string", "enum": ["pending", "active"] },
+        "uid": { "type": "string", "maxLength": 128 },
+        "addedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "displayName", "roleType", "status", "uid", "addedBy", "createdAt", "updatedAt"]
     },
     "UserPrivate": {
       "title": "UserPrivate",
@@ -389,6 +409,10 @@
     "/teachers/{teacherId}": {
       "schema": { "$ref": "#/entities/Teacher" },
       "description": "Authorized teachers with access to the teacher dashboard."
+    },
+    "/teacher_invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/TeacherInvite" },
+      "description": "Email-based teacher invitations and teacher account registry."
     },
     "/user_private/{userId}": {
       "schema": { "$ref": "#/entities/UserPrivate" },

@@ -1,6 +1,30 @@
 export type Language = 'ar' | 'en';
 export type ThemeMode = 'light' | 'dark';
 export type UserRole = 'teacher' | 'student';
+export type TeacherRoleType = 'admin' | 'teacher';
+
+export interface TeacherProfile {
+  uid: string;
+  displayName: string;
+  email?: string;
+  roleType?: TeacherRoleType;
+  inviteId?: string;
+  addedBy: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface TeacherInvite {
+  id: string;
+  email: string;
+  displayName: string;
+  roleType: TeacherRoleType;
+  status: 'pending' | 'active';
+  uid: string;
+  addedBy: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
 
 export type AppTab =
   | 'home'

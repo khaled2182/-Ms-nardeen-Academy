@@ -26,7 +26,7 @@ import { SettingsView } from './components/SettingsView';
 import { StudentHome } from './components/StudentHome';
 import { StudentOnboardingScreen } from './components/StudentOnboardingScreen';
 import { TasksView } from './components/TasksView';
-import { TeacherDashboard } from './components/TeacherDashboard';
+import { TeacherDashboard, TeacherTab } from './components/TeacherDashboard';
 import {
   auth,
   BOOTSTRAP_ADMIN_EMAIL,
@@ -77,6 +77,8 @@ import {
   RewardItem,
   StudentProfile,
   TaskSubmission,
+  TeacherInvite,
+  TeacherProfile,
   ThemeMode,
   UserPrivate,
   UserRole,
@@ -86,6 +88,7 @@ function AcademyApp() {
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole>('student');
+  const [isAdminTeacher, setIsAdminTeacher] = useState(false);
   const [userPrivate, setUserPrivate] = useState<UserPrivate | null>(null);
   const [lang, setLang] = useState<Language>('ar');
   const [theme, setTheme] = useState<ThemeMode>('light');
@@ -96,6 +99,7 @@ function AcademyApp() {
   const [customAppIconUrl, setCustomAppIconUrl] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<AppTab>('home');
+  const [requestedTeacherTab, setRequestedTeacherTab] = useState<TeacherTab | null>(null);
   const [teacherPreviewStudentMode, setTeacherPreviewStudentMode] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -112,6 +116,8 @@ function AcademyApp() {
   const [transactions, setTransactions] = useState<PointTransaction[]>([]);
   const [notifications, setNotifications] = useState<AcademyNotification[]>([]);
   const [readNotifIds, setReadNotifIds] = useState<Set<string>>(new Set());
+  const [teacherInvites, setTeacherInvites] = useState<TeacherInvite[]>([]);
+  const [teacherProfiles, setTeacherProfiles] = useState<TeacherProfile[]>([]);
 
   // Selected modal items
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
@@ -168,6 +174,7 @@ function AcademyApp() {
         setUser(null);
         setUserPrivate(null);
         setRole('student');
+        setIsAdminTeacher(false);
         setNeedsOnboarding(false);
         setStudents([]);
         setLessons([]);
@@ -179,6 +186,8 @@ function AcademyApp() {
         setRedemptions([]);
         setTransactions([]);
         setNotifications([]);
+        setTeacherInvites([]);
+        setTeacherProfiles([]);
         initialNotifsLoadedRef.current = false;
         seenNotifIdsRef.current = new Set();
         setAuthReady(true);
@@ -189,6 +198,7 @@ function AcademyApp() {
         const session = await bootstrapUserSession(firebaseUser);
         setUser(firebaseUser);
         setRole(session.role);
+        setIsAdminTeacher(session.isAdminTeacher);
         setUserPrivate(session.userPrivate);
         setNeedsOnboarding(session.needsOnboarding);
         setLang(session.userPrivate.preferredLanguage || 'ar');
@@ -420,6 +430,67 @@ function AcademyApp() {
         }
       )
     );
+
+    // 14. Teacher Accounts & Invites (Teacher Only)
+    if (isTeacher) {
+      unsubscribers.push(
+        onSnapshot(
+          collection(db, 'teacher_invites'),
+          (snap) => {
+            const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TeacherInvite));
+            setTeacherInvites(sortByCreatedDesc(list));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'teacher_invites')
+        )
+      );
+
+      unsubscribers.push(
+        onSnapshot(
+          collection(db, 'teachers'),
+          (snap) => {
+            setTeacherProfiles(snap.docs.map((d) => d.data() as TeacherProfile));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'teachers')
+        )
+      );
+
+      const isBootstrapEmail =
+        (user.email || '').trim().toLowerCase() === BOOTSTRAP_ADMIN_EMAIL.toLowerCase();
+      if (!isBootstrapEmail) {
+        unsubscribers.push(
+          onSnapshot(
+            doc(db, 'teachers', user.uid),
+            async (snap) => {
+              if (!snap.exists()) {
+                try {
+                  const nextSession = await bootstrapUserSession(user);
+                  setRole(nextSession.role);
+                  setIsAdminTeacher(nextSession.isAdminTeacher);
+                  setUserPrivate(nextSession.userPrivate);
+                  setNeedsOnboarding(nextSession.needsOnboarding);
+                  setTeacherPreviewStudentMode(false);
+                  setActiveTab(nextSession.role === 'teacher' ? 'teacher' : 'home');
+                } catch {
+                  setRole('student');
+                  setIsAdminTeacher(false);
+                  setTeacherPreviewStudentMode(false);
+                  setActiveTab('home');
+                }
+              } else {
+                const data = snap.data() as TeacherProfile;
+                setIsAdminTeacher(data.roleType === 'admin');
+              }
+            },
+            () => {
+              setRole('student');
+              setIsAdminTeacher(false);
+              setTeacherPreviewStudentMode(false);
+              setActiveTab('home');
+            }
+          )
+        );
+      }
+    }
 
     return () => {
       unsubscribers.forEach((u) => u());
@@ -804,6 +875,7 @@ function AcademyApp() {
               <TeacherDashboard
                 lang={lang}
                 teacherUid={user.uid}
+                isAdminTeacher={isAdminTeacher}
                 students={students}
                 lessons={lessons}
                 tasks={tasks}
@@ -813,6 +885,10 @@ function AcademyApp() {
                 redemptions={redemptions}
                 transactions={transactions}
                 notifications={notifications}
+                teacherInvites={teacherInvites}
+                teacherProfiles={teacherProfiles}
+                requestedTab={requestedTeacherTab}
+                onClearRequestedTab={() => setRequestedTeacherTab(null)}
                 onNotifyToast={showToast}
               />
             ) : (
@@ -1058,11 +1134,13 @@ function AcademyApp() {
               theme={theme}
               email={user.email || ''}
               isTeacher={isTeacher}
+              isAdminTeacher={isAdminTeacher}
               isBootstrapAdmin={
                 isTeacher &&
                 (user.email || '').trim().toLowerCase() === BOOTSTRAP_ADMIN_EMAIL &&
                 user.emailVerified
               }
+              teachersCount={teacherInvites.length + 1}
               appIconUrl={customAppIconUrl}
               notificationsEnabled={Boolean(userPrivate?.notificationsEnabled)}
               notifications={notifications}
@@ -1070,6 +1148,11 @@ function AcademyApp() {
               onChangeLang={handleChangeLang}
               onChangeTheme={handleChangeTheme}
               onEnableNotifications={handleEnableNotifications}
+              onOpenTeacherAccounts={() => {
+                setTeacherPreviewStudentMode(false);
+                setRequestedTeacherTab('teachers');
+                setActiveTab('teacher');
+              }}
               onUpdateAppIcon={async (iconUrl) => {
                 await saveAppIconBranding(user.uid, iconUrl);
                 setCustomAppIconUrl(iconUrl);

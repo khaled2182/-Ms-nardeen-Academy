@@ -8,6 +8,7 @@ import {
   LogOut,
   Moon,
   RotateCcw,
+  ShieldCheck,
   Sun,
   Trash2,
   X,
@@ -22,7 +23,9 @@ interface SettingsViewProps {
   theme: ThemeMode;
   email: string;
   isTeacher?: boolean;
+  isAdminTeacher?: boolean;
   isBootstrapAdmin?: boolean;
+  teachersCount?: number;
   appIconUrl?: string;
   notificationsEnabled: boolean;
   notifications: AcademyNotification[];
@@ -31,6 +34,7 @@ interface SettingsViewProps {
   onChangeTheme: (theme: ThemeMode) => Promise<void>;
   onEnableNotifications: () => Promise<void>;
   onUpdateAppIcon?: (iconUrl: string) => Promise<void>;
+  onOpenTeacherAccounts?: () => void;
   onDeleteNotification?: (notifId: string) => Promise<void>;
   onFactoryReset?: () => Promise<void>;
   onMarkNotificationRead: (notifId: string) => Promise<void>;
@@ -42,7 +46,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   theme,
   email,
   isTeacher = false,
+  isAdminTeacher = false,
   isBootstrapAdmin = false,
+  teachersCount = 0,
   appIconUrl = '',
   notificationsEnabled,
   notifications,
@@ -51,6 +57,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onChangeTheme,
   onEnableNotifications,
   onUpdateAppIcon,
+  onOpenTeacherAccounts,
   onDeleteNotification,
   onFactoryReset,
   onMarkNotificationRead,
@@ -359,6 +366,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         )}
       </section>
+
+      {/* Teacher Accounts Management Shortcut */}
+      {isTeacher && isAdminTeacher && onOpenTeacherAccounts && (
+        <section className="rounded-3xl bg-sky-50/70 dark:bg-sky-950/25 border border-sky-200 dark:border-sky-800/70 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {lang === 'ar'
+                  ? `إدارة حسابات المعلمات (${teachersCount})`
+                  : `Teacher Accounts Management (${teachersCount})`}
+              </h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                {lang === 'ar'
+                  ? 'إضافة بريد Google لمعلمات أو مديرات جدد، وتعديل صلاحياتهم أو إزالة حساباتهم من داخل التطبيق.'
+                  : 'Add Google emails for new teachers or admins, edit their permissions, or revoke access directly inside the app.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenTeacherAccounts}
+            className="min-h-[42px] px-4 py-2 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shrink-0 self-start sm:self-auto transition-colors"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>{lang === 'ar' ? 'فتح إدارة المعلمات' : 'Manage Teachers'}</span>
+          </button>
+        </section>
+      )}
 
       {/* Factory Reset (Bootstrap Admin Only) */}
       {isBootstrapAdmin && onFactoryReset && (

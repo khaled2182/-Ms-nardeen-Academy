@@ -36,6 +36,9 @@ import {
   RewardItem,
   StudentProfile,
   TaskSubmission,
+  TeacherInvite,
+  TeacherProfile,
+  TeacherRoleType,
   ThemeMode,
   UserPrivate,
   UserRole,
@@ -46,6 +49,24 @@ function clampStr(val: string, max: number): string {
   return val.trim().slice(0, max);
 }
 
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export function toEmailDocId(email: string): string {
+  const clean = normalizeEmail(email);
+  const bytes = new TextEncoder().encode(clean);
+  let binary = '';
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+    .slice(0, 128);
+}
+
 function makeTxId(prefix: string): string {
   const rand = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now()}_${rand}`.replace(/[^a-zA-Z0-9_-]/g, '');
@@ -53,27 +74,69 @@ function makeTxId(prefix: string): string {
 
 export async function bootstrapUserSession(user: User): Promise<{
   role: UserRole;
+  isAdminTeacher: boolean;
   userPrivate: UserPrivate;
   studentProfile: StudentProfile | null;
   needsOnboarding: boolean;
 }> {
   const uid = user.uid;
-  const email = (user.email || '').trim().toLowerCase();
-  const isBootstrapTeacher = email === BOOTSTRAP_ADMIN_EMAIL && user.emailVerified;
+  const email = normalizeEmail(user.email || '');
+  const isBootstrapTeacher = email === BOOTSTRAP_ADMIN_EMAIL.toLowerCase() && user.emailVerified;
 
   let isRegisteredTeacher = isBootstrapTeacher;
+  let teacherRoleType: TeacherRoleType = isBootstrapTeacher ? 'admin' : 'teacher';
+
   if (!isRegisteredTeacher && user.emailVerified) {
     try {
       const teacherSnap = await getDoc(doc(db, 'teachers', uid));
       if (teacherSnap.exists()) {
         isRegisteredTeacher = true;
+        const tData = teacherSnap.data() as TeacherProfile;
+        teacherRoleType = tData.roleType === 'admin' ? 'admin' : 'teacher';
       }
     } catch {
-      // Non-teachers cannot read missing teacher docs or only own doc; safe fallback
+      // Non-teachers cannot read missing teacher docs; fallback to invite check
+    }
+  }
+
+  if (!isRegisteredTeacher && user.emailVerified && email) {
+    try {
+      const inviteId = toEmailDocId(email);
+      const inviteSnap = await getDoc(doc(db, 'teacher_invites', inviteId));
+      if (inviteSnap.exists()) {
+        const invite = inviteSnap.data() as Omit<TeacherInvite, 'id'>;
+        if (normalizeEmail(invite.email) === email) {
+          const batch = writeBatch(db);
+          batch.set(doc(db, 'teachers', uid), {
+            uid,
+            email,
+            displayName: clampStr(
+              invite.displayName || user.displayName || 'Teacher',
+              VALIDATION_LIMITS.DISPLAY_NAME_MAX
+            ),
+            roleType: invite.roleType === 'admin' ? 'admin' : 'teacher',
+            inviteId,
+            addedBy: invite.addedBy,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          batch.update(doc(db, 'teacher_invites', inviteId), {
+            status: 'active',
+            uid,
+            updatedAt: serverTimestamp(),
+          });
+          await batch.commit();
+          isRegisteredTeacher = true;
+          teacherRoleType = invite.roleType === 'admin' ? 'admin' : 'teacher';
+        }
+      }
+    } catch {
+      // No invite or not eligible
     }
   }
 
   const role: UserRole = isRegisteredTeacher ? 'teacher' : 'student';
+  const isAdminTeacher = isBootstrapTeacher || (isRegisteredTeacher && teacherRoleType === 'admin');
   const privateRef = doc(db, 'user_private', uid);
   let userPrivate: UserPrivate;
 
@@ -97,6 +160,8 @@ export async function bootstrapUserSession(user: User): Promise<{
       if (existing.role !== role && isRegisteredTeacher) {
         await updateDoc(privateRef, { role: 'teacher', updatedAt: serverTimestamp() });
         userPrivate = { ...existing, role: 'teacher' };
+      } else if (existing.role === 'teacher' && !isRegisteredTeacher) {
+        userPrivate = { ...existing, role: 'student' };
       } else {
         userPrivate = existing;
       }
@@ -106,17 +171,18 @@ export async function bootstrapUserSession(user: User): Promise<{
   }
 
   if (role === 'teacher') {
-    return { role, userPrivate, studentProfile: null, needsOnboarding: false };
+    return { role, isAdminTeacher, userPrivate, studentProfile: null, needsOnboarding: false };
   }
 
   const studentRef = doc(db, 'students', uid);
   try {
     const studentSnap = await getDoc(studentRef);
     if (!studentSnap.exists()) {
-      return { role, userPrivate, studentProfile: null, needsOnboarding: true };
+      return { role, isAdminTeacher: false, userPrivate, studentProfile: null, needsOnboarding: true };
     }
     return {
       role,
+      isAdminTeacher: false,
       userPrivate,
       studentProfile: studentSnap.data() as StudentProfile,
       needsOnboarding: false,
@@ -1304,6 +1370,7 @@ export async function resetAllAcademyDataAndAccounts(): Promise<void> {
     'tasks',
     'rewards',
     'students',
+    'teacher_invites',
     'teachers',
     'user_private',
   ];
@@ -1331,5 +1398,162 @@ export async function resetAllAcademyDataAndAccounts(): Promise<void> {
 
   applyWebAppIconToHead('');
   await signOut(auth);
+}
+
+// ==========================================
+// TEACHER ACCOUNT MANAGEMENT
+// ==========================================
+
+export async function addTeacherInvite(
+  addedByUid: string,
+  data: {
+    email: string;
+    displayName: string;
+    roleType: TeacherRoleType;
+  }
+): Promise<void> {
+  const email = normalizeEmail(data.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 96) {
+    throw new Error('Please enter a valid email address.');
+  }
+  if (email === BOOTSTRAP_ADMIN_EMAIL.toLowerCase()) {
+    throw new Error('This email is already the primary administrator account.');
+  }
+
+  const inviteId = toEmailDocId(email);
+  const inviteRef = doc(db, 'teacher_invites', inviteId);
+
+  try {
+    const existing = await getDoc(inviteRef);
+    if (existing.exists()) {
+      throw new Error('This email is already added to the teacher accounts list.');
+    }
+
+    await setDoc(inviteRef, {
+      email,
+      displayName: clampStr(data.displayName || email.split('@')[0], VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      roleType: data.roleType,
+      status: 'pending',
+      uid: '',
+      addedBy: addedByUid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('already added') || error.message.includes('primary administrator'))
+    ) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.CREATE, `teacher_invites/${inviteId}`);
+  }
+}
+
+export async function updateTeacherAccount(
+  invite: TeacherInvite,
+  updates: {
+    displayName: string;
+    roleType: TeacherRoleType;
+  }
+): Promise<void> {
+  const cleanName = clampStr(updates.displayName, VALIDATION_LIMITS.DISPLAY_NAME_MAX);
+  if (!cleanName) return;
+
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'teacher_invites', invite.id), {
+    displayName: cleanName,
+    roleType: updates.roleType,
+    updatedAt: serverTimestamp(),
+  });
+
+  if (invite.uid) {
+    try {
+      const teacherRef = doc(db, 'teachers', invite.uid);
+      const teacherSnap = await getDoc(teacherRef);
+      if (teacherSnap.exists()) {
+        batch.update(teacherRef, {
+          displayName: cleanName,
+          roleType: updates.roleType,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    } catch {
+      // Fallback if teacher doc isn't created yet
+    }
+  }
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `teacher_invites/${invite.id}`);
+  }
+}
+
+export async function removeTeacherAccount(invite: TeacherInvite): Promise<void> {
+  if (invite.uid && invite.uid === auth.currentUser?.uid) {
+    throw new Error('You cannot remove your own currently signed-in teacher account.');
+  }
+
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'teacher_invites', invite.id));
+
+  if (invite.uid) {
+    try {
+      const teacherRef = doc(db, 'teachers', invite.uid);
+      const teacherSnap = await getDoc(teacherRef);
+      if (teacherSnap.exists()) {
+        batch.delete(teacherRef);
+      }
+    } catch {
+      // Ignore lookup errors
+    }
+  }
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `teacher_invites/${invite.id}`);
+  }
+
+  if (invite.uid) {
+    try {
+      const privRef = doc(db, 'user_private', invite.uid);
+      const privSnap = await getDoc(privRef);
+      if (privSnap.exists()) {
+        await updateDoc(privRef, {
+          role: 'student',
+          updatedAt: serverTimestamp(),
+        });
+      }
+    } catch {
+      // Best-effort role sync on user_private
+    }
+  }
+}
+
+export async function removeLegacyTeacherDoc(teacherUid: string): Promise<void> {
+  if (teacherUid === auth.currentUser?.uid) {
+    throw new Error('You cannot remove your own currently signed-in teacher account.');
+  }
+
+  try {
+    await deleteDoc(doc(db, 'teachers', teacherUid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `teachers/${teacherUid}`);
+  }
+
+  try {
+    const privRef = doc(db, 'user_private', teacherUid);
+    const privSnap = await getDoc(privRef);
+    if (privSnap.exists()) {
+      await updateDoc(privRef, {
+        role: 'student',
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch {
+    // Best-effort role sync
+  }
 }
 

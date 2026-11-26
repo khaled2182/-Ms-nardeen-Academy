@@ -33,13 +33,22 @@ service cloud.firestore {
     }
 
     function isBootstrapAdmin() {
-      return isVerifiedUser() && request.auth.token.email == 'khalid134099@gmail.com';
+      return isVerifiedUser() && request.auth.token.email.lower() == 'khalid134099@gmail.com';
     }
 
     function isTeacher() {
       return isBootstrapAdmin() || (
         isVerifiedUser() &&
         exists(/databases/$(database)/documents/teachers/$(request.auth.uid))
+      );
+    }
+
+    function isAdminTeacher() {
+      return isBootstrapAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/teachers/$(request.auth.uid)) &&
+        ('roleType' in get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data) &&
+        get(/databases/$(database)/documents/teachers/$(request.auth.uid)).data.roleType == 'admin'
       );
     }
 
@@ -59,11 +68,39 @@ service cloud.firestore {
 
     function isValidTeacher(data) {
       return data.keys().hasAll(['uid', 'displayName', 'addedBy', 'createdAt']) &&
-        data.keys().hasOnly(['uid', 'displayName', 'addedBy', 'createdAt']) &&
+        data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'roleType', 'inviteId', 'addedBy', 'createdAt', 'updatedAt'
+        ]) &&
         isValidId(data.uid) &&
         isValidString(data.displayName, 1, 80) &&
+        (!('email' in data) || isValidString(data.email, 3, 254)) &&
+        (!('roleType' in data) || data.roleType in ['admin', 'teacher']) &&
+        (!('inviteId' in data) || isValidId(data.inviteId)) &&
         isValidId(data.addedBy) &&
-        data.createdAt is timestamp;
+        data.createdAt is timestamp &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidTeacherInvite(data) {
+      return data.keys().hasAll([
+          'email', 'displayName', 'roleType', 'status', 'uid',
+          'addedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'email', 'displayName', 'roleType', 'status', 'uid',
+          'addedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidString(data.email, 3, 254) &&
+        data.email == data.email.lower() &&
+        data.email.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$') &&
+        isValidString(data.displayName, 1, 80) &&
+        data.roleType in ['admin', 'teacher'] &&
+        data.status in ['pending', 'active'] &&
+        isValidOptionalString(data.uid, 128) &&
+        (data.uid == '' || isValidId(data.uid)) &&
+        isValidId(data.addedBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
     }
 
     function isValidUserPrivate(data, userId) {
@@ -365,10 +402,64 @@ service cloud.firestore {
 
     match /teachers/{teacherId} {
       allow get: if isValidId(teacherId) && isVerifiedUser() && (request.auth.uid == teacherId || isTeacher());
-      allow list: if isBootstrapAdmin();
-      allow create: if isValidId(teacherId) && isBootstrapAdmin() && isValidTeacher(incoming()) &&
-        incoming().uid == teacherId && incoming().addedBy == request.auth.uid && incoming().createdAt == request.time;
-      allow update, delete: if isValidId(teacherId) && isBootstrapAdmin();
+      allow list: if isTeacher();
+      allow create: if isValidId(teacherId) && isValidTeacher(incoming()) &&
+        incoming().createdAt == request.time &&
+        (!('updatedAt' in incoming()) || incoming().updatedAt == request.time) &&
+        (
+          (isAdminTeacher() && incoming().uid == teacherId && incoming().addedBy == request.auth.uid) ||
+          (isVerifiedUser() &&
+            teacherId == request.auth.uid &&
+            incoming().uid == request.auth.uid &&
+            ('email' in incoming()) &&
+            incoming().email == request.auth.token.email.lower() &&
+            ('inviteId' in incoming()) &&
+            isValidId(incoming().inviteId) &&
+            exists(/databases/$(database)/documents/teacher_invites/$(incoming().inviteId)) &&
+            get(/databases/$(database)/documents/teacher_invites/$(incoming().inviteId)).data.email == request.auth.token.email.lower() &&
+            incoming().addedBy == get(/databases/$(database)/documents/teacher_invites/$(incoming().inviteId)).data.addedBy &&
+            (!('roleType' in incoming()) || incoming().roleType == get(/databases/$(database)/documents/teacher_invites/$(incoming().inviteId)).data.roleType))
+        );
+      allow update: if isValidId(teacherId) && isAdminTeacher() && isValidTeacher(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().addedBy == existing().addedBy &&
+        incoming().createdAt == existing().createdAt &&
+        (!('updatedAt' in incoming()) || incoming().updatedAt == request.time) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'roleType', 'updatedAt']);
+      allow delete: if isValidId(teacherId) && (isBootstrapAdmin() || (isAdminTeacher() && teacherId != request.auth.uid));
+    }
+
+    match /teacher_invites/{inviteId} {
+      allow get: if isValidId(inviteId) && isVerifiedUser() && (
+        isTeacher() || existing().email == request.auth.token.email.lower()
+      );
+      allow list: if isTeacher();
+      allow create: if isValidId(inviteId) && isAdminTeacher() && isValidTeacherInvite(incoming()) &&
+        incoming().email != 'khalid134099@gmail.com' &&
+        incoming().addedBy == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().uid == '' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(inviteId) && isValidTeacherInvite(incoming()) &&
+        incoming().email == existing().email &&
+        incoming().addedBy == existing().addedBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdminTeacher() &&
+            incoming().status == existing().status &&
+            incoming().uid == existing().uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'roleType', 'updatedAt'])) ||
+          (isVerifiedUser() &&
+            existing().email == request.auth.token.email.lower() &&
+            incoming().uid == request.auth.uid &&
+            incoming().status == 'active' &&
+            incoming().roleType == existing().roleType &&
+            incoming().displayName == existing().displayName &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'uid', 'updatedAt']))
+        );
+      allow delete: if isValidId(inviteId) && isAdminTeacher();
     }
 
     match /user_private/{userId} {
@@ -395,7 +486,7 @@ service cloud.firestore {
 
     match /students/{studentId} {
       allow get: if isValidId(studentId) && isSignedIn() && (existing().isActive == true || isOwner(studentId) || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isActive == true);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.isActive == true);
       allow create: if isValidId(studentId) && isValidStudent(incoming(), studentId) &&
         incoming().createdAt == request.time && incoming().updatedAt == request.time &&
         (
@@ -460,7 +551,7 @@ service cloud.firestore {
 
     match /lessons/{lessonId} {
       allow get: if isValidId(lessonId) && isSignedIn() && (existing().isPublished == true || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isPublished == true);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.isPublished == true);
       allow create: if isValidId(lessonId) && isTeacher() && isValidLesson(incoming()) &&
         incoming().createdBy == request.auth.uid &&
         incoming().createdAt == request.time &&
@@ -479,7 +570,7 @@ service cloud.firestore {
 
     match /lesson_completions/{completionId} {
       allow get: if isValidId(completionId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.studentId == request.auth.uid);
       allow create: if isValidId(completionId) && isVerifiedUser() &&
         isValidLessonCompletion(incoming(), completionId) &&
         incoming().studentId == request.auth.uid &&
@@ -492,7 +583,7 @@ service cloud.firestore {
 
     match /tasks/{taskId} {
       allow get: if isValidId(taskId) && isSignedIn() && (existing().isPublished == true || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isPublished == true);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.isPublished == true);
       allow create: if isValidId(taskId) && isTeacher() && isValidTask(incoming()) &&
         incoming().createdBy == request.auth.uid &&
         incoming().createdAt == request.time &&
@@ -511,7 +602,7 @@ service cloud.firestore {
 
     match /task_submissions/{submissionId} {
       allow get: if isValidId(submissionId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.studentId == request.auth.uid);
       allow create: if isValidId(submissionId) && isVerifiedUser() &&
         isValidTaskSubmission(incoming(), submissionId) &&
         incoming().studentId == request.auth.uid &&
@@ -553,7 +644,7 @@ service cloud.firestore {
         isTeacher()
       );
       allow list: if isSignedIn() && (
-        isBootstrapAdmin() ||
+        isTeacher() ||
         resource.data.targetStudentId == 'all' ||
         resource.data.targetStudentId == request.auth.uid ||
         resource.data.createdBy == request.auth.uid
@@ -612,7 +703,7 @@ service cloud.firestore {
 
     match /rewards/{rewardId} {
       allow get: if isValidId(rewardId) && isSignedIn() && (existing().isAvailable == true || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.isAvailable == true);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.isAvailable == true);
       allow create: if isValidId(rewardId) && isTeacher() && isValidReward(incoming()) &&
         incoming().createdBy == request.auth.uid &&
         incoming().createdAt == request.time &&
@@ -630,7 +721,7 @@ service cloud.firestore {
 
     match /redemptions/{redemptionId} {
       allow get: if isValidId(redemptionId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.studentId == request.auth.uid);
       allow create: if isValidId(redemptionId) && isVerifiedUser() &&
         isValidRedemption(incoming()) &&
         incoming().studentId == request.auth.uid &&
@@ -658,7 +749,7 @@ service cloud.firestore {
 
     match /point_transactions/{txId} {
       allow get: if isValidId(txId) && isSignedIn() && (existing().studentId == request.auth.uid || isTeacher());
-      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
+      allow list: if isSignedIn() && (isTeacher() || resource.data.studentId == request.auth.uid);
       allow create: if isValidId(txId) && isVerifiedUser() &&
         isValidPointTransaction(incoming()) &&
         incoming().createdAt == request.time &&
@@ -691,7 +782,7 @@ service cloud.firestore {
         isTeacher()
       );
       allow list: if isSignedIn() && (
-        isBootstrapAdmin() ||
+        isTeacher() ||
         resource.data.targetStudentId == 'all' ||
         resource.data.targetStudentId == request.auth.uid
       );
