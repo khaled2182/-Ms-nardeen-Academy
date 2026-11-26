@@ -10,6 +10,7 @@ import {
   History,
   Megaphone,
   Plus,
+  RotateCcw,
   Send,
   Star,
   Trash2,
@@ -32,12 +33,20 @@ import {
   createOrUpdateLesson,
   createOrUpdateReward,
   createOrUpdateTask,
+  deleteAllStudentProfiles,
   deleteLesson,
   deleteNote,
+  deleteNotification,
+  deletePointTransaction,
+  deleteRedemptionRequest,
   deleteReward,
+  deleteStudentProfile,
   deleteTask,
+  deleteTaskSubmission,
   gradeHomeworkSubmission,
   publishNoteOrAnnouncement,
+  resetAllStudentsPoints,
+  resetSingleStudentPoints,
   reviewRedemptionRequest,
   sendCustomNotification,
   teacherAdjustStudentPoints,
@@ -46,6 +55,7 @@ import {
 } from '../services/academyService';
 import {
   AcademyNote,
+  AcademyNotification,
   AcademyTask,
   Language,
   Lesson,
@@ -69,6 +79,7 @@ interface TeacherDashboardProps {
   rewards: RewardItem[];
   redemptions: RedemptionRequest[];
   transactions: PointTransaction[];
+  notifications: AcademyNotification[];
   onNotifyToast: (type: 'success' | 'error', message: string) => void;
 }
 
@@ -92,6 +103,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   rewards,
   redemptions,
   transactions,
+  notifications,
   onNotifyToast,
 }) => {
   const [activeTab, setActiveTab] = useState<TeacherTab>('overview');
@@ -100,6 +112,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Student modals
   const [studentSearch, setStudentSearch] = useState('');
   const [editingStudent, setEditingStudent] = useState<StudentProfile | null>(null);
+  const [confirmDeleteStudent, setConfirmDeleteStudent] = useState<StudentProfile | null>(null);
+  const [confirmDeleteAllStudents, setConfirmDeleteAllStudents] = useState(false);
+  const [confirmResetAllPoints, setConfirmResetAllPoints] = useState(false);
   const [editStudentForm, setEditStudentForm] = useState({
     displayName: '',
     photoURL: '',
@@ -318,16 +333,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </p>
         </div>
 
-        <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              {t(lang, 'statDistributedPoints')}
-            </span>
-            <Star className="w-5 h-5 text-amber-500" />
+        <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 flex flex-col justify-between gap-2">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {t(lang, 'statDistributedPoints')}
+              </span>
+              <Star className="w-5 h-5 text-amber-500" />
+            </div>
+            <p className="text-3xl font-bold text-slate-900 dark:text-white tabular-nums">
+              {totalDistributedPoints}
+            </p>
           </div>
-          <p className="text-3xl font-bold text-slate-900 dark:text-white tabular-nums">
-            {totalDistributedPoints}
-          </p>
+          {(totalDistributedPoints > 0 ||
+            students.some((s) => s.totalPoints > 0 || s.weeklyEarned > 0 || s.monthlyEarned > 0)) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setConfirmResetAllPoints(true)}
+              className="mt-1 self-start min-h-[32px] px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-[11px] font-bold flex items-center gap-1 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>{lang === 'ar' ? 'تصفير النقاط الموزعة' : 'Reset Points'}</span>
+            </button>
+          )}
         </div>
 
         <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5">
@@ -413,9 +442,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </p>
                       </div>
                     </div>
-                    <span className="font-bold text-sm text-amber-600 dark:text-amber-400 tabular-nums shrink-0">
-                      {st.totalPoints} {t(lang, 'pointsUnit')}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="font-bold text-sm text-amber-600 dark:text-amber-400 tabular-nums">
+                        {st.totalPoints} {t(lang, 'pointsUnit')}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setConfirmDeleteStudent(st)}
+                        className="min-h-[32px] min-w-[32px] rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center"
+                        aria-label={t(lang, 'deleteLabel')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -442,15 +482,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         {lang === 'ar' ? tx.reasonAr : tx.reason}
                       </p>
                     </div>
-                    <span
-                      className={`font-bold text-sm tabular-nums shrink-0 ${
-                        tx.amount >= 0
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`font-bold text-sm tabular-nums ${
+                          tx.amount >= 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          runAction(
+                            () => deletePointTransaction(tx.id),
+                            lang === 'ar' ? 'تم حذف سجل النقاط' : 'Transaction deleted'
+                          )
+                        }
+                        className="min-h-[32px] min-w-[32px] rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center"
+                        aria-label={t(lang, 'deleteLabel')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -470,14 +526,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               placeholder={lang === 'ar' ? 'ابحث باسم الطالب...' : 'Search students by name...'}
               className="min-h-[44px] w-full sm:max-w-xs px-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm"
             />
-            <button
-              type="button"
-              onClick={() => setShowAddStudentModal(true)}
-              className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold flex items-center gap-2 self-start sm:self-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{t(lang, 'createStudentManually')}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              {students.length > 0 && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmDeleteAllStudents(true)}
+                  className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs sm:text-sm font-semibold flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{lang === 'ar' ? 'إزالة جميع ملفات الطلاب' : 'Remove All Students'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowAddStudentModal(true)}
+                className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{t(lang, 'createStudentManually')}</span>
+              </button>
+            </div>
           </div>
 
           {filteredStudents.length === 0 ? (
@@ -559,6 +628,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     >
                       <History className="w-3.5 h-3.5" />
                       <span>{t(lang, 'studentActivityLog')}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setConfirmDeleteStudent(st)}
+                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{t(lang, 'deleteLabel')}</span>
                     </button>
                   </div>
                 </div>
@@ -850,6 +929,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
               ))}
             </div>
+          )}
+
+          {submissions.length > 0 && (
+            <section className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 space-y-3">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {lang === 'ar' ? `تسليمات الطلاب (${submissions.length})` : `Student Submissions (${submissions.length})`}
+              </h2>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {submissions.map((sub) => (
+                  <div key={sub.id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                        {sub.studentName} · {sub.taskTitle}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                        {sub.taskType.toUpperCase()} · {sub.status} · +{sub.pointsAwarded} {t(lang, 'pointsUnit')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        runAction(
+                          () => deleteTaskSubmission(sub.id),
+                          lang === 'ar' ? 'تم حذف التسليم' : 'Submission deleted'
+                        )
+                      }
+                      className="min-h-[36px] px-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 shrink-0"
+                      aria-label={t(lang, 'deleteLabel')}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
         </div>
       )}
@@ -1218,90 +1333,172 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               ))}
             </div>
           )}
+
+          {redemptions.length > 0 && (
+            <section className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 space-y-3">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {lang === 'ar' ? `سجل طلبات استبدال الهدايا (${redemptions.length})` : `Redemption History (${redemptions.length})`}
+              </h2>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {redemptions.map((req) => (
+                  <div key={req.id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                        {req.studentName} → {lang === 'ar' ? req.rewardTitleAr : req.rewardTitle}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                        {req.costPoints} {t(lang, 'pointsUnit')} · {req.status}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        runAction(
+                          () => deleteRedemptionRequest(req.id),
+                          lang === 'ar' ? 'تم حذف طلب الهدية' : 'Redemption deleted'
+                        )
+                      }
+                      className="min-h-[36px] px-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 shrink-0"
+                      aria-label={t(lang, 'deleteLabel')}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 
       {/* TAB 7: PUSH NOTIFICATIONS */}
       {activeTab === 'notifications' && (
-        <section className="max-w-2xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-            {t(lang, 'sendNotification')}
-          </h2>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <section className="lg:col-span-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 space-y-4">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+              {t(lang, 'sendNotification')}
+            </h2>
 
-          <select
-            value={notifForm.targetStudentId}
-            onChange={(e) => setNotifForm({ ...notifForm, targetStudentId: e.target.value })}
-            className="w-full min-h-[44px] px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
-          >
-            <option value="all">{t(lang, 'allStudentsOption')}</option>
-            {students.map((st) => (
-              <option key={st.uid} value={st.uid}>
-                {st.displayName}
-              </option>
-            ))}
-          </select>
+            <select
+              value={notifForm.targetStudentId}
+              onChange={(e) => setNotifForm({ ...notifForm, targetStudentId: e.target.value })}
+              className="w-full min-h-[44px] px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            >
+              <option value="all">{t(lang, 'allStudentsOption')}</option>
+              {students.map((st) => (
+                <option key={st.uid} value={st.uid}>
+                  {st.displayName}
+                </option>
+              ))}
+            </select>
 
-          <input
-            type="text"
-            placeholder={lang === 'ar' ? 'عنوان الإشعار بالعربية' : 'Notification Title (Arabic)'}
-            value={notifForm.titleAr}
-            onChange={(e) => setNotifForm({ ...notifForm, titleAr: e.target.value })}
-            className="w-full min-h-[44px] px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
-          />
+            <input
+              type="text"
+              placeholder={lang === 'ar' ? 'عنوان الإشعار بالعربية' : 'Notification Title (Arabic)'}
+              value={notifForm.titleAr}
+              onChange={(e) => setNotifForm({ ...notifForm, titleAr: e.target.value })}
+              className="w-full min-h-[44px] px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            />
 
-          <input
-            type="text"
-            placeholder="Notification Title (English)"
-            value={notifForm.title}
-            onChange={(e) => setNotifForm({ ...notifForm, title: e.target.value })}
-            className="w-full min-h-[44px] px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
-          />
+            <input
+              type="text"
+              placeholder="Notification Title (English)"
+              value={notifForm.title}
+              onChange={(e) => setNotifForm({ ...notifForm, title: e.target.value })}
+              className="w-full min-h-[44px] px-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            />
 
-          <textarea
-            rows={3}
-            placeholder={lang === 'ar' ? 'نص الإشعار بالعربية' : 'Message (Arabic)'}
-            value={notifForm.bodyAr}
-            onChange={(e) => setNotifForm({ ...notifForm, bodyAr: e.target.value })}
-            className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
-          />
+            <textarea
+              rows={3}
+              placeholder={lang === 'ar' ? 'نص الإشعار بالعربية' : 'Message (Arabic)'}
+              value={notifForm.bodyAr}
+              onChange={(e) => setNotifForm({ ...notifForm, bodyAr: e.target.value })}
+              className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            />
 
-          <textarea
-            rows={3}
-            placeholder="Message (English)"
-            value={notifForm.body}
-            onChange={(e) => setNotifForm({ ...notifForm, body: e.target.value })}
-            className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
-          />
+            <textarea
+              rows={3}
+              placeholder="Message (English)"
+              value={notifForm.body}
+              onChange={(e) => setNotifForm({ ...notifForm, body: e.target.value })}
+              className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            />
 
-          <button
-            type="button"
-            disabled={busy || (!notifForm.title && !notifForm.titleAr) || (!notifForm.body && !notifForm.bodyAr)}
-            onClick={() =>
-              runAction(async () => {
-                await sendCustomNotification(teacherUid, {
-                  ...notifForm,
-                  title: notifForm.title || notifForm.titleAr,
-                  titleAr: notifForm.titleAr || notifForm.title,
-                  body: notifForm.body || notifForm.bodyAr,
-                  bodyAr: notifForm.bodyAr || notifForm.body,
-                });
-                setNotifForm({
-                  targetStudentId: 'all',
-                  title: '',
-                  titleAr: '',
-                  body: '',
-                  bodyAr: '',
-                  type: 'announcement',
-                  linkTab: 'home',
-                });
-              }, lang === 'ar' ? 'تم إرسال الإشعار الفوري بنجاح' : 'Push notification sent!')
-            }
-            className="min-h-[46px] px-6 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50"
-          >
-            <Send className="w-4 h-4" />
-            <span>{t(lang, 'sendNotification')}</span>
-          </button>
-        </section>
+            <button
+              type="button"
+              disabled={busy || (!notifForm.title && !notifForm.titleAr) || (!notifForm.body && !notifForm.bodyAr)}
+              onClick={() =>
+                runAction(async () => {
+                  await sendCustomNotification(teacherUid, {
+                    ...notifForm,
+                    title: notifForm.title || notifForm.titleAr,
+                    titleAr: notifForm.titleAr || notifForm.title,
+                    body: notifForm.body || notifForm.bodyAr,
+                    bodyAr: notifForm.bodyAr || notifForm.body,
+                  });
+                  setNotifForm({
+                    targetStudentId: 'all',
+                    title: '',
+                    titleAr: '',
+                    body: '',
+                    bodyAr: '',
+                    type: 'announcement',
+                    linkTab: 'home',
+                  });
+                }, lang === 'ar' ? 'تم إرسال الإشعار الفوري بنجاح' : 'Push notification sent!')
+              }
+              className="w-full min-h-[46px] px-6 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Send className="w-4 h-4" />
+              <span>{t(lang, 'sendNotification')}</span>
+            </button>
+          </section>
+
+          <section className="lg:col-span-7 space-y-3">
+            {notifications.length === 0 ? (
+              <EmptyState
+                icon={<Bell className="w-7 h-7" />}
+                title={lang === 'ar' ? 'لا توجد إشعارات مرسلة حتى الآن' : 'No sent notifications yet'}
+              />
+            ) : (
+              notifications.map((n) => (
+                <div
+                  key={n.id}
+                  className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 flex items-start justify-between gap-4"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                      {n.targetStudentId === 'all'
+                        ? t(lang, 'allStudentsOption')
+                        : studentById.get(n.targetStudentId)?.displayName || n.targetStudentId}
+                    </p>
+                    <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                      {lang === 'ar' ? n.titleAr : n.title}
+                    </h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 break-words">
+                      {lang === 'ar' ? n.bodyAr : n.body}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      runAction(
+                        () => deleteNotification(n.id),
+                        lang === 'ar' ? 'تم حذف الإشعار' : 'Notification deleted'
+                      )
+                    }
+                    className="min-h-[38px] px-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 shrink-0"
+                    aria-label={t(lang, 'deleteLabel')}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
+          </section>
+        </div>
       )}
 
       {/* MODAL: ADJUST POINTS */}
@@ -1359,25 +1556,41 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               className="w-full min-h-[44px] px-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
             />
 
-            <button
-              type="button"
-              disabled={busy || !pointsReason.trim()}
-              onClick={() =>
-                runAction(async () => {
-                  const delta = pointsMode === 'add' ? pointsDelta : -pointsDelta;
-                  await teacherAdjustStudentPoints(
-                    teacherUid,
-                    pointsModalStudent,
-                    delta,
-                    pointsReason
-                  );
-                  setPointsModalStudent(null);
-                }, lang === 'ar' ? 'تم تحديث رصيد النقاط' : 'Student points updated')
-              }
-              className="w-full min-h-[46px] rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm disabled:opacity-50"
-            >
-              {t(lang, 'saveChanges')}
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                disabled={busy || !pointsReason.trim()}
+                onClick={() =>
+                  runAction(async () => {
+                    const delta = pointsMode === 'add' ? pointsDelta : -pointsDelta;
+                    await teacherAdjustStudentPoints(
+                      teacherUid,
+                      pointsModalStudent,
+                      delta,
+                      pointsReason
+                    );
+                    setPointsModalStudent(null);
+                  }, lang === 'ar' ? 'تم تحديث رصيد النقاط' : 'Student points updated')
+                }
+                className="flex-1 min-h-[46px] rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm disabled:opacity-50"
+              >
+                {t(lang, 'saveChanges')}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  runAction(async () => {
+                    await resetSingleStudentPoints(pointsModalStudent.uid);
+                    setPointsModalStudent(null);
+                  }, lang === 'ar' ? 'تم تصفير نقاط الطالب إلى 0' : 'Student points reset to 0')
+                }
+                className="min-h-[46px] px-4 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center justify-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{lang === 'ar' ? 'تصفير (0)' : 'Reset (0)'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1603,13 +1816,29 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       </p>
                       <p className="text-xs text-slate-500">{tx.sourceType}</p>
                     </div>
-                    <span
-                      className={`font-bold text-sm tabular-nums ${
-                        tx.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                      }`}
-                    >
-                      {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`font-bold text-sm tabular-nums ${
+                          tx.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                        }`}
+                      >
+                        {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          runAction(
+                            () => deletePointTransaction(tx.id),
+                            lang === 'ar' ? 'تم حذف حركة النقاط' : 'Transaction deleted'
+                          )
+                        }
+                        className="min-h-[32px] min-w-[32px] rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center"
+                        aria-label={t(lang, 'deleteLabel')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               {transactions.filter((tx) => tx.studentId === activityModalStudent.uid).length === 0 && (
@@ -1617,6 +1846,141 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   {lang === 'ar' ? 'لا يوجد نشاط مسجل بعد.' : 'No recorded activity yet.'}
                 </p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM DELETE STUDENT */}
+      {confirmDeleteStudent && (
+        <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                {lang === 'ar' ? 'تأكيد حذف الطالب' : 'Confirm Delete Student'}
+              </h3>
+              <button type="button" onClick={() => setConfirmDeleteStudent(null)} className="p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {lang === 'ar'
+                ? `هل تريد حذف ملف الطالب "${confirmDeleteStudent.displayName}" نهائيًا من لوحة المتصدرين والأكاديمية؟`
+                : `Permanently delete student profile "${confirmDeleteStudent.displayName}" from the academy and leaderboard?`}
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmDeleteStudent(null)}
+                className="min-h-[42px] px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200"
+              >
+                {t(lang, 'cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  runAction(async () => {
+                    await deleteStudentProfile(confirmDeleteStudent.uid);
+                    setConfirmDeleteStudent(null);
+                  }, lang === 'ar' ? 'تمت إزالة ملف الطالب بنجاح' : 'Student profile removed')
+                }
+                className="min-h-[42px] px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{t(lang, 'deleteLabel')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM RESET ALL DISTRIBUTED POINTS */}
+      {confirmResetAllPoints && (
+        <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                {lang === 'ar' ? 'تصفير إجمالي النقاط الموزعة' : 'Reset Total Distributed Points'}
+              </h3>
+              <button type="button" onClick={() => setConfirmResetAllPoints(false)} className="p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {lang === 'ar'
+                ? 'سيتم تصفير إجمالي النقاط الموزعة وإعادة رصيد جميع الطلاب (الأسبوعي والشهري والإجمالي) إلى 0 مع مسح سجل حركات النقاط.'
+                : 'This will reset total distributed points, clear point transaction logs, and set all student point balances (weekly, monthly, and total) back to 0.'}
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmResetAllPoints(false)}
+                className="min-h-[42px] px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200"
+              >
+                {t(lang, 'cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  runAction(async () => {
+                    await resetAllStudentsPoints();
+                    setConfirmResetAllPoints(false);
+                  }, lang === 'ar' ? 'تم تصفير إجمالي النقاط الموزعة إلى 0' : 'Distributed points reset to 0')
+                }
+                className="min-h-[42px] px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'تأكيد التصفير' : 'Confirm Reset'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM DELETE ALL STUDENT PROFILES */}
+      {confirmDeleteAllStudents && (
+        <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                {lang === 'ar' ? 'تأكيد إزالة جميع ملفات الطلاب' : 'Confirm Remove All Students'}
+              </h3>
+              <button type="button" onClick={() => setConfirmDeleteAllStudents(false)} className="p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {lang === 'ar'
+                ? 'سيتم حذف جميع ملفات الطلاب وسجلات نقاطهم وتسليماتهم وطلباتهم نهائيًا مع الإبقاء على الدروس والمهام والهدايا.'
+                : 'All student profiles, point records, submissions, and redemptions will be permanently removed while keeping lessons, tasks, and rewards.'}
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmDeleteAllStudents(false)}
+                className="min-h-[42px] px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200"
+              >
+                {t(lang, 'cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  runAction(async () => {
+                    await deleteAllStudentProfiles();
+                    setConfirmDeleteAllStudents(false);
+                  }, lang === 'ar' ? 'تمت إزالة جميع ملفات الطلاب بنجاح' : 'All student profiles removed')
+                }
+                className="min-h-[42px] px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'إزالة الجميع' : 'Remove All'}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1836,17 +2200,32 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                 {taskForm.questions.map((q, qIdx) => (
                   <div key={qIdx} className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4 space-y-2.5">
-                    <input
-                      type="text"
-                      placeholder={`Question ${qIdx + 1}`}
-                      value={q.question}
-                      onChange={(e) => {
-                        const next = [...taskForm.questions];
-                        next[qIdx] = { ...q, question: e.target.value, questionAr: e.target.value };
-                        setTaskForm({ ...taskForm, questions: next });
-                      }}
-                      className="w-full min-h-[40px] px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder={`Question ${qIdx + 1}`}
+                        value={q.question}
+                        onChange={(e) => {
+                          const next = [...taskForm.questions];
+                          next[qIdx] = { ...q, question: e.target.value, questionAr: e.target.value };
+                          setTaskForm({ ...taskForm, questions: next });
+                        }}
+                        className="flex-1 min-h-[40px] px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm"
+                      />
+                      {taskForm.questions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = taskForm.questions.filter((_, idx) => idx !== qIdx);
+                            setTaskForm({ ...taskForm, questions: next });
+                          }}
+                          className="min-h-[40px] min-w-[40px] rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0"
+                          aria-label={t(lang, 'deleteLabel')}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       {q.options.map((opt, oIdx) => (
                         <div key={oIdx} className="flex items-center gap-1.5">

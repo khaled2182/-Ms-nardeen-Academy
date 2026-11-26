@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BookOpen, CheckCircle2, Play, X } from 'lucide-react';
+import { BookOpen, CheckCircle2, Play, Trash2, X } from 'lucide-react';
 import { ASSET_IMAGES, getLevelLabel, parseEmbedVideoUrl } from '../lib/gamification';
 import { t } from '../lib/i18n';
 import { Language, Lesson, LessonCompletion } from '../types';
@@ -13,6 +13,7 @@ interface LessonsViewProps {
   selectedLesson: Lesson | null;
   onSelectLesson: (lesson: Lesson | null) => void;
   onCompleteLesson: (lesson: Lesson) => Promise<void>;
+  onDeleteLesson?: (lessonId: string) => Promise<void>;
 }
 
 export const LessonsView: React.FC<LessonsViewProps> = ({
@@ -23,6 +24,7 @@ export const LessonsView: React.FC<LessonsViewProps> = ({
   selectedLesson,
   onSelectLesson,
   onCompleteLesson,
+  onDeleteLesson,
 }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'completed'>('all');
   const [topicFilter, setTopicFilter] = useState<string>('all');
@@ -168,14 +170,26 @@ export const LessonsView: React.FC<LessonsViewProps> = ({
                       </span>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onSelectLesson(lesson)}
-                    className="min-h-[42px] px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap"
-                  >
-                    <Play className="w-4 h-4" />
-                    <span>{t(lang, 'watchLesson')}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isTeacherPreview && onDeleteLesson && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteLesson(lesson.id)}
+                        className="min-h-[42px] px-3 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center transition-colors"
+                        aria-label={t(lang, 'deleteLabel')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onSelectLesson(lesson)}
+                      className="min-h-[42px] px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                    >
+                      <Play className="w-4 h-4" />
+                      <span>{t(lang, 'watchLesson')}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );

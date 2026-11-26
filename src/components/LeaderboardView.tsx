@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Crown, Medal, Trophy } from 'lucide-react';
+import { Crown, Medal, Trash2, Trophy, X } from 'lucide-react';
 import {
   ASSET_IMAGES,
   getEffectiveMonthlyPoints,
@@ -14,14 +14,20 @@ interface LeaderboardViewProps {
   lang: Language;
   students: StudentProfile[];
   currentStudentId?: string;
+  isTeacher?: boolean;
+  onDeleteStudent?: (studentId: string) => Promise<void>;
 }
 
 export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   lang,
   students,
   currentStudentId,
+  isTeacher = false,
+  onDeleteStudent,
 }) => {
   const [period, setPeriod] = useState<'weekly' | 'monthly' | 'all'>('weekly');
+  const [confirmStudent, setConfirmStudent] = useState<StudentProfile | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const ranked = useMemo(() => {
     const active = students.filter((s) => s.isActive);
@@ -254,10 +260,20 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="text-end shrink-0">
+                    <div className="flex items-center gap-2.5 text-end shrink-0">
                       <p className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tabular-nums">
                         {score} {t(lang, 'pointsUnit')}
                       </p>
+                      {isTeacher && onDeleteStudent && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmStudent(student)}
+                          className="min-h-[36px] min-w-[36px] rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center"
+                          aria-label={t(lang, 'deleteLabel')}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -265,6 +281,53 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             </div>
           </section>
         </>
+      )}
+
+      {confirmStudent && onDeleteStudent && (
+        <div className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                {lang === 'ar' ? 'تأكيد إزالة ملف الطالب' : 'Confirm Remove Student'}
+              </h3>
+              <button type="button" onClick={() => setConfirmStudent(null)} className="p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {lang === 'ar'
+                ? `هل تريد إزالة ملف الطالب "${confirmStudent.displayName}" نهائيًا؟`
+                : `Permanently remove "${confirmStudent.displayName}"'s student profile?`}
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmStudent(null)}
+                className="min-h-[42px] px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200"
+              >
+                {t(lang, 'cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await onDeleteStudent(confirmStudent.uid);
+                    setConfirmStudent(null);
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+                className="min-h-[42px] px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{t(lang, 'deleteLabel')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

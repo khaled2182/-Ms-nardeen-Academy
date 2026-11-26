@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircle2, ClipboardList, ExternalLink, HelpCircle, X } from 'lucide-react';
+import { CheckCircle2, ClipboardList, ExternalLink, HelpCircle, Trash2, X } from 'lucide-react';
 import { getLevelLabel } from '../lib/gamification';
 import { t } from '../lib/i18n';
 import { AcademyTask, Language, TaskSubmission } from '../types';
@@ -14,6 +14,7 @@ interface TasksViewProps {
   onSelectTask: (task: AcademyTask | null) => void;
   onSubmitQuiz: (task: AcademyTask, selectedAnswers: number[]) => Promise<void>;
   onSubmitHomework: (task: AcademyTask, answerText: string) => Promise<void>;
+  onDeleteTask?: (taskId: string) => Promise<void>;
 }
 
 export const TasksView: React.FC<TasksViewProps> = ({
@@ -25,6 +26,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onSelectTask,
   onSubmitQuiz,
   onSubmitHomework,
+  onDeleteTask,
 }) => {
   const [filterType, setFilterType] = useState<'all' | 'quiz' | 'homework'>('all');
   const [quizAnswers, setQuizAnswers] = useState<number[]>([]);
@@ -155,19 +157,31 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     </span>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => openTaskModal(task)}
-                    className="min-h-[42px] px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors whitespace-nowrap"
-                  >
-                    {sub
-                      ? lang === 'ar'
-                        ? 'عرض التفاصيل'
-                        : 'View Details'
-                      : task.type === 'quiz'
-                      ? t(lang, 'startQuiz')
-                      : t(lang, 'submitHomework')}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isTeacherPreview && onDeleteTask && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteTask(task.id)}
+                        className="min-h-[42px] px-3 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center transition-colors"
+                        aria-label={t(lang, 'deleteLabel')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openTaskModal(task)}
+                      className="min-h-[42px] px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                    >
+                      {sub
+                        ? lang === 'ar'
+                          ? 'عرض التفاصيل'
+                          : 'View Details'
+                        : task.type === 'quiz'
+                        ? t(lang, 'startQuiz')
+                        : t(lang, 'submitHomework')}
+                    </button>
+                  </div>
                 </div>
               </div>
             );

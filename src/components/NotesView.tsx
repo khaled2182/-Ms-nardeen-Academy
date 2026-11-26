@@ -34,6 +34,7 @@ interface NotesViewProps {
     attachmentType: 'none' | 'image' | 'link';
   }) => Promise<void>;
   onDeleteOwnNote?: (noteId: string) => Promise<void>;
+  onDeleteNote?: (noteId: string) => Promise<void>;
 }
 
 export const NotesView: React.FC<NotesViewProps> = ({
@@ -46,6 +47,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
   onMarkRead,
   onCreateStudentNote,
   onDeleteOwnNote,
+  onDeleteNote,
 }) => {
   const [filter, setFilter] = useState<'all' | 'unread' | 'community'>('all');
   const [showComposer, setShowComposer] = useState(false);
@@ -420,10 +422,11 @@ export const NotesView: React.FC<NotesViewProps> = ({
                       </button>
                     )}
 
-                    {!isTeacherPreview && isOwnStudentPost && onDeleteOwnNote && (
+                    {((isTeacherPreview && onDeleteNote) ||
+                      (!isTeacherPreview && isOwnStudentPost && (onDeleteNote || onDeleteOwnNote))) && (
                       <button
                         type="button"
-                        onClick={() => onDeleteOwnNote(note.id)}
+                        onClick={() => (onDeleteNote || onDeleteOwnNote)?.(note.id)}
                         className="min-h-[38px] px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1 transition-colors"
                         aria-label={t(lang, 'deleteLabel')}
                       >

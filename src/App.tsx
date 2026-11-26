@@ -29,6 +29,7 @@ import { TasksView } from './components/TasksView';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import {
   auth,
+  BOOTSTRAP_ADMIN_EMAIL,
   db,
   googleProvider,
   handleFirestoreError,
@@ -45,12 +46,18 @@ import {
   bootstrapUserSession,
   completeLessonAtomically,
   completeStudentRegistration,
+  deleteLesson,
   deleteNote,
+  deleteNotification,
+  deleteReward,
+  deleteStudentProfile,
+  deleteTask,
   getAppIconBranding,
   markNoteRead,
   markNotificationRead,
   publishStudentNoteOrIssue,
   requestRewardRedemption,
+  resetAllAcademyDataAndAccounts,
   saveAppIconBranding,
   submitHomework,
   submitQuizAtomically,
@@ -805,6 +812,7 @@ function AcademyApp() {
                 rewards={rewards}
                 redemptions={redemptions}
                 transactions={transactions}
+                notifications={notifications}
                 onNotifyToast={showToast}
               />
             ) : (
@@ -869,6 +877,19 @@ function AcademyApp() {
                   showToast('error', err instanceof Error ? err.message : 'Failed to complete lesson');
                 }
               }}
+              onDeleteLesson={
+                isTeacher
+                  ? async (lessonId) => {
+                      try {
+                        await deleteLesson(lessonId);
+                        if (selectedLesson?.id === lessonId) setSelectedLesson(null);
+                        showToast('success', lang === 'ar' ? 'تم حذف الدرس' : 'Lesson deleted');
+                      } catch (err) {
+                        showToast('error', err instanceof Error ? err.message : 'Failed to delete lesson');
+                      }
+                    }
+                  : undefined
+              }
             />
           )}
 
@@ -902,6 +923,19 @@ function AcademyApp() {
                   showToast('error', err instanceof Error ? err.message : 'Failed to submit homework');
                 }
               }}
+              onDeleteTask={
+                isTeacher
+                  ? async (taskId) => {
+                      try {
+                        await deleteTask(taskId);
+                        if (selectedTask?.id === taskId) setSelectedTask(null);
+                        showToast('success', lang === 'ar' ? 'تم حذف المهمة' : 'Task deleted');
+                      } catch (err) {
+                        showToast('error', err instanceof Error ? err.message : 'Failed to delete task');
+                      }
+                    }
+                  : undefined
+              }
             />
           )}
 
@@ -910,6 +944,25 @@ function AcademyApp() {
               lang={lang}
               students={students}
               currentStudentId={activeStudent?.uid}
+              isTeacher={isTeacher}
+              onDeleteStudent={
+                isTeacher
+                  ? async (studentId) => {
+                      try {
+                        await deleteStudentProfile(studentId);
+                        showToast(
+                          'success',
+                          lang === 'ar' ? 'تمت إزالة ملف الطالب بنجاح' : 'Student profile removed'
+                        );
+                      } catch (err) {
+                        showToast(
+                          'error',
+                          err instanceof Error ? err.message : 'Failed to remove student profile'
+                        );
+                      }
+                    }
+                  : undefined
+              }
             />
           )}
 
@@ -929,6 +982,18 @@ function AcademyApp() {
                   showToast('error', err instanceof Error ? err.message : 'Redemption request failed');
                 }
               }}
+              onDeleteReward={
+                isTeacher
+                  ? async (rewardId) => {
+                      try {
+                        await deleteReward(rewardId);
+                        showToast('success', lang === 'ar' ? 'تم حذف الهدية' : 'Reward deleted');
+                      } catch (err) {
+                        showToast('error', err instanceof Error ? err.message : 'Failed to delete reward');
+                      }
+                    }
+                  : undefined
+              }
             />
           )}
 
@@ -959,6 +1024,14 @@ function AcademyApp() {
                 await deleteNote(noteId);
                 showToast('success', lang === 'ar' ? 'تم حذف الملاحظة' : 'Note deleted');
               }}
+              onDeleteNote={async (noteId) => {
+                try {
+                  await deleteNote(noteId);
+                  showToast('success', lang === 'ar' ? 'تم حذف الملاحظة' : 'Note deleted');
+                } catch (err) {
+                  showToast('error', err instanceof Error ? err.message : 'Failed to delete note');
+                }
+              }}
             />
           )}
 
@@ -985,6 +1058,11 @@ function AcademyApp() {
               theme={theme}
               email={user.email || ''}
               isTeacher={isTeacher}
+              isBootstrapAdmin={
+                isTeacher &&
+                (user.email || '').trim().toLowerCase() === BOOTSTRAP_ADMIN_EMAIL &&
+                user.emailVerified
+              }
               appIconUrl={customAppIconUrl}
               notificationsEnabled={Boolean(userPrivate?.notificationsEnabled)}
               notifications={notifications}
@@ -999,6 +1077,29 @@ function AcademyApp() {
                   'success',
                   lang === 'ar' ? 'تم تحديث أيقونة التطبيق بنجاح!' : 'Web App icon updated!'
                 );
+              }}
+              onDeleteNotification={
+                isTeacher
+                  ? async (notifId) => {
+                      try {
+                        await deleteNotification(notifId);
+                        showToast('success', lang === 'ar' ? 'تم حذف الإشعار' : 'Notification deleted');
+                      } catch (err) {
+                        showToast(
+                          'error',
+                          err instanceof Error ? err.message : 'Failed to delete notification'
+                        );
+                      }
+                    }
+                  : undefined
+              }
+              onFactoryReset={async () => {
+                await resetAllAcademyDataAndAccounts();
+                setCustomAppIconUrl('');
+                setPendingPhotoURL('');
+                setSelectedLesson(null);
+                setSelectedTask(null);
+                setTeacherPreviewStudentMode(false);
               }}
               onMarkNotificationRead={async (notifId) => {
                 if (!user) return;

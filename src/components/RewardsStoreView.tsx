@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Clock, Gift, Star, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Gift, Star, Trash2, XCircle } from 'lucide-react';
 import { ASSET_IMAGES } from '../lib/gamification';
 import { t } from '../lib/i18n';
 import { Language, RedemptionRequest, RewardItem, StudentProfile } from '../types';
@@ -12,6 +12,7 @@ interface RewardsStoreViewProps {
   redemptions: RedemptionRequest[];
   isTeacherPreview?: boolean;
   onRedeem: (reward: RewardItem) => Promise<void>;
+  onDeleteReward?: (rewardId: string) => Promise<void>;
 }
 
 export const RewardsStoreView: React.FC<RewardsStoreViewProps> = ({
@@ -21,6 +22,7 @@ export const RewardsStoreView: React.FC<RewardsStoreViewProps> = ({
   redemptions,
   isTeacherPreview = false,
   onRedeem,
+  onDeleteReward,
 }) => {
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
@@ -91,7 +93,17 @@ export const RewardsStoreView: React.FC<RewardsStoreViewProps> = ({
                     {reward.costPoints} {t(lang, 'pointsUnit')}
                   </span>
 
-                  {!isTeacherPreview && (
+                  {isTeacherPreview && onDeleteReward ? (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteReward(reward.id)}
+                      className="min-h-[40px] px-3 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      aria-label={t(lang, 'deleteLabel')}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>{t(lang, 'deleteLabel')}</span>
+                    </button>
+                  ) : !isTeacherPreview && (
                     <button
                       type="button"
                       disabled={!canAfford || pendingExists || submittingId === reward.id}

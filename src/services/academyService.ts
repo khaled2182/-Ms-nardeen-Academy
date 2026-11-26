@@ -1,15 +1,19 @@
-import { User } from 'firebase/auth';
+import { signOut, User } from 'firebase/auth';
 import {
   collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import {
+  auth,
   BOOTSTRAP_ADMIN_EMAIL,
   db,
   handleFirestoreError,
@@ -1059,6 +1063,171 @@ export async function sendCustomNotification(
   }
 }
 
+async function deleteByStudentIdBestEffort(collectionName: string, studentId: string): Promise<void> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, collectionName), where('studentId', '==', studentId))
+    );
+    if (snap.empty) return;
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch {
+    // Non-bootstrap teachers may not have list access to all student-scoped logs
+  }
+}
+
+export async function deleteStudentProfile(studentId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'students', studentId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `students/${studentId}`);
+  }
+
+  const relatedCols = [
+    'lesson_completions',
+    'task_submissions',
+    'redemptions',
+    'point_transactions',
+    'note_reads',
+    'notification_reads',
+  ];
+  for (const colName of relatedCols) {
+    await deleteByStudentIdBestEffort(colName, studentId);
+  }
+
+  if (studentId !== auth.currentUser?.uid) {
+    try {
+      await deleteDoc(doc(db, 'user_private', studentId));
+    } catch {
+      // Only bootstrap admin can delete user_private records
+    }
+  }
+}
+
+export async function deleteAllStudentProfiles(): Promise<void> {
+  try {
+    await deleteCollectionInBatches('students');
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'students');
+  }
+
+  const relatedCols = [
+    'lesson_completions',
+    'task_submissions',
+    'redemptions',
+    'point_transactions',
+    'note_reads',
+    'notification_reads',
+  ];
+  for (const colName of relatedCols) {
+    try {
+      await deleteCollectionInBatches(colName);
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+
+  try {
+    const privSnap = await getDocs(collection(db, 'user_private'));
+    const currentUid = auth.currentUser?.uid;
+    const toDelete = privSnap.docs.filter((d) => d.id !== currentUid && d.data().role !== 'teacher');
+    for (let i = 0; i < toDelete.length; i += 400) {
+      const batch = writeBatch(db);
+      toDelete.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+export async function resetAllStudentsPoints(): Promise<void> {
+  const currentWeek = getWeekKey();
+  const currentMonth = getMonthKey();
+
+  try {
+    const snap = await getDocs(collection(db, 'students'));
+    if (!snap.empty) {
+      const docs = snap.docs;
+      for (let i = 0; i < docs.length; i += 400) {
+        const batch = writeBatch(db);
+        docs.slice(i, i + 400).forEach((d) => {
+          batch.update(d.ref, {
+            totalPoints: 0,
+            lifetimePoints: 0,
+            weeklyEarned: 0,
+            monthlyEarned: 0,
+            weekKey: currentWeek,
+            monthKey: currentMonth,
+            updatedAt: serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, 'students');
+  }
+
+  try {
+    await deleteCollectionInBatches('point_transactions');
+  } catch {
+    // Best-effort cleanup of transaction history
+  }
+}
+
+export async function resetSingleStudentPoints(studentId: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'students', studentId), {
+      totalPoints: 0,
+      lifetimePoints: 0,
+      weeklyEarned: 0,
+      monthlyEarned: 0,
+      weekKey: getWeekKey(),
+      monthKey: getMonthKey(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `students/${studentId}`);
+  }
+}
+
+export async function deleteTaskSubmission(submissionId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'task_submissions', submissionId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `task_submissions/${submissionId}`);
+  }
+}
+
+export async function deleteRedemptionRequest(redemptionId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'redemptions', redemptionId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `redemptions/${redemptionId}`);
+  }
+}
+
+export async function deleteNotification(notifId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'notifications', notifId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `notifications/${notifId}`);
+  }
+}
+
+export async function deletePointTransaction(txId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'point_transactions', txId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `point_transactions/${txId}`);
+  }
+}
+
 export async function getAppIconBranding(): Promise<string> {
   try {
     const snap = await getDoc(doc(db, 'app_settings', 'branding'));
@@ -1098,5 +1267,69 @@ export function applyWebAppIconToHead(iconUrl: string): void {
   if (touchLink) {
     touchLink.href = resolvedTouch;
   }
+}
+
+async function deleteCollectionInBatches(collectionName: string): Promise<void> {
+  const snap = await getDocs(collection(db, collectionName));
+  if (snap.empty) return;
+
+  const docs = snap.docs;
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + CHUNK_SIZE).forEach((d) => {
+      batch.delete(d.ref);
+    });
+    await batch.commit();
+  }
+}
+
+export async function resetAllAcademyDataAndAccounts(): Promise<void> {
+  const currentUser = auth.currentUser;
+  const email = (currentUser?.email || '').trim().toLowerCase();
+  if (!currentUser || !currentUser.emailVerified || email !== BOOTSTRAP_ADMIN_EMAIL) {
+    throw new Error('Only the verified bootstrap administrator can reset all academy data.');
+  }
+
+  const collectionsToWipe = [
+    'lesson_completions',
+    'task_submissions',
+    'note_reads',
+    'notification_reads',
+    'point_transactions',
+    'redemptions',
+    'notifications',
+    'notes',
+    'lessons',
+    'tasks',
+    'rewards',
+    'students',
+    'teachers',
+    'user_private',
+  ];
+
+  for (const colName of collectionsToWipe) {
+    try {
+      await deleteCollectionInBatches(colName);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, colName);
+    }
+  }
+
+  try {
+    await deleteDoc(doc(db, 'app_settings', 'branding'));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'app_settings/branding');
+  }
+
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+  } catch {
+    // Ignore storage access errors in restricted contexts
+  }
+
+  applyWebAppIconToHead('');
+  await signOut(auth);
 }
 

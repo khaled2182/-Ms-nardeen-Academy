@@ -599,14 +599,15 @@ service cloud.firestore {
     }
 
     match /note_reads/{readId} {
-      allow get: if isValidId(readId) && isSignedIn() && existing().studentId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.studentId == request.auth.uid;
+      allow get: if isValidId(readId) && isSignedIn() && (existing().studentId == request.auth.uid || isBootstrapAdmin());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
       allow create: if isValidId(readId) && isVerifiedUser() &&
         isValidNoteRead(incoming(), readId) &&
         incoming().studentId == request.auth.uid &&
         incoming().readAt == request.time &&
         exists(/databases/$(database)/documents/notes/$(incoming().noteId));
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isValidId(readId) && isBootstrapAdmin();
     }
 
     match /rewards/{rewardId} {
@@ -679,7 +680,8 @@ service cloud.firestore {
                 incoming().amount <= get(/databases/$(database)/documents/tasks/$(incoming().sourceId)).data.points)
             ))
         );
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isValidId(txId) && isTeacher();
     }
 
     match /notifications/{notifId} {
@@ -701,14 +703,15 @@ service cloud.firestore {
     }
 
     match /notification_reads/{readId} {
-      allow get: if isValidId(readId) && isSignedIn() && existing().studentId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.studentId == request.auth.uid;
+      allow get: if isValidId(readId) && isSignedIn() && (existing().studentId == request.auth.uid || isBootstrapAdmin());
+      allow list: if isSignedIn() && (isBootstrapAdmin() || resource.data.studentId == request.auth.uid);
       allow create: if isValidId(readId) && isVerifiedUser() &&
         isValidNotificationRead(incoming(), readId) &&
         incoming().studentId == request.auth.uid &&
         incoming().readAt == request.time &&
         exists(/databases/$(database)/documents/notifications/$(incoming().notifId));
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isValidId(readId) && isBootstrapAdmin();
     }
 
     match /app_settings/{settingId} {
