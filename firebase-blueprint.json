@@ -200,7 +200,7 @@
     },
     "Note": {
       "title": "Note",
-      "description": "Teacher note or general announcement.",
+      "description": "Teacher announcement/note or student public note/issue visible to all students and teacher.",
       "type": "object",
       "properties": {
         "title": { "type": "string", "minLength": 1, "maxLength": 120 },
@@ -208,9 +208,11 @@
         "content": { "type": "string", "minLength": 1, "maxLength": 2500 },
         "contentAr": { "type": "string", "minLength": 1, "maxLength": 2500 },
         "targetStudentId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "category": { "type": "string", "enum": ["announcement", "note"] },
+        "category": { "type": "string", "enum": ["announcement", "note", "student_note", "student_issue"] },
         "attachmentUrl": { "type": "string", "maxLength": 220000 },
         "attachmentType": { "type": "string", "enum": ["none", "link", "image", "file"] },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorRole": { "type": "string", "enum": ["teacher", "student"] },
         "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }

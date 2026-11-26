@@ -141,9 +141,11 @@ export interface AcademyNote {
   content: string;
   contentAr: string;
   targetStudentId: string;
-  category: 'announcement' | 'note';
+  category: 'announcement' | 'note' | 'student_note' | 'student_issue';
   attachmentUrl: string;
   attachmentType: 'none' | 'link' | 'image' | 'file';
+  authorName?: string;
+  authorRole?: UserRole;
   createdBy: string;
   createdAt?: unknown;
   updatedAt?: unknown;

@@ -704,6 +704,8 @@ export async function publishNoteOrAnnouncement(
     category: data.category,
     attachmentUrl: clampStr(data.attachmentUrl, VALIDATION_LIMITS.ATTACHMENT_URL_MAX),
     attachmentType: data.attachmentType,
+    authorName: 'Ms Nardeen',
+    authorRole: 'teacher' as const,
     createdBy: teacherUid,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -730,6 +732,41 @@ export async function publishNoteOrAnnouncement(
 
   try {
     await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'notes');
+  }
+}
+
+export async function publishStudentNoteOrIssue(
+  student: StudentProfile,
+  data: {
+    title: string;
+    content: string;
+    category: 'student_note' | 'student_issue';
+    attachmentUrl: string;
+    attachmentType: 'none' | 'image' | 'link';
+  }
+): Promise<void> {
+  const noteRef = doc(collection(db, 'notes'));
+  const cleanTitle = clampStr(data.title, VALIDATION_LIMITS.TITLE_MAX);
+  const cleanContent = clampStr(data.content, VALIDATION_LIMITS.NOTE_CONTENT_MAX);
+
+  try {
+    await setDoc(noteRef, {
+      title: cleanTitle,
+      titleAr: cleanTitle,
+      content: cleanContent,
+      contentAr: cleanContent,
+      targetStudentId: 'all',
+      category: data.category,
+      attachmentUrl: clampStr(data.attachmentUrl, VALIDATION_LIMITS.ATTACHMENT_URL_MAX),
+      attachmentType: data.attachmentType,
+      authorName: clampStr(student.displayName || 'Student', VALIDATION_LIMITS.DISPLAY_NAME_MAX),
+      authorRole: 'student',
+      createdBy: student.uid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, 'notes');
   }

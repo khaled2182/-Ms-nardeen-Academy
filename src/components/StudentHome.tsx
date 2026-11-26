@@ -362,6 +362,20 @@ export const StudentHome: React.FC<StudentHomeProps> = ({
                           </span>
                         )}
                       </div>
+                      {note.authorName && (
+                        <p className="text-[11px] font-semibold text-violet-600 dark:text-violet-400 mb-0.5 truncate">
+                          {note.authorName}
+                          {note.category === 'student_issue'
+                            ? lang === 'ar'
+                              ? ' · مشكلة / استفسار'
+                              : ' · Issue'
+                            : note.category === 'student_note'
+                            ? lang === 'ar'
+                              ? ' · ملاحظة طالب'
+                              : ' · Student Note'
+                            : ''}
+                        </p>
+                      )}
                       <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
                         {lang === 'ar' ? note.contentAr : note.content}
                       </p>

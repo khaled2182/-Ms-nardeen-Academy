@@ -1003,17 +1003,29 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   key={n.id}
                   className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 flex items-start justify-between gap-4"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                      {n.authorName ? `${n.authorName} · ` : ''}
                       {n.targetStudentId === 'all'
                         ? t(lang, 'allStudentsOption')
                         : studentById.get(n.targetStudentId)?.displayName || n.targetStudentId}{' '}
-                      · {n.category}
+                      ·{' '}
+                      {n.category === 'student_issue'
+                        ? lang === 'ar'
+                          ? 'مشكلة طالب'
+                          : 'Student Issue'
+                        : n.category === 'student_note'
+                        ? lang === 'ar'
+                          ? 'ملاحظة طالب'
+                          : 'Student Note'
+                        : n.category === 'announcement'
+                        ? t(lang, 'generalAnnouncement')
+                        : t(lang, 'personalNote')}
                     </p>
                     <h3 className="font-bold text-base text-slate-900 dark:text-white">
                       {lang === 'ar' ? n.titleAr : n.title}
                     </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-line break-words">
                       {lang === 'ar' ? n.contentAr : n.content}
                     </p>
                   </div>

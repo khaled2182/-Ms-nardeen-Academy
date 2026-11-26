@@ -45,9 +45,11 @@ import {
   bootstrapUserSession,
   completeLessonAtomically,
   completeStudentRegistration,
+  deleteNote,
   getAppIconBranding,
   markNoteRead,
   markNotificationRead,
+  publishStudentNoteOrIssue,
   requestRewardRedemption,
   saveAppIconBranding,
   submitHomework,
@@ -935,10 +937,27 @@ function AcademyApp() {
               lang={lang}
               notes={notes}
               readNoteIds={readNoteIds}
+              currentStudent={activeStudent}
+              currentUserId={user.uid}
               isTeacherPreview={isTeacher}
               onMarkRead={async (noteId) => {
                 if (!user) return;
                 await markNoteRead(user.uid, noteId);
+              }}
+              onCreateStudentNote={async (data) => {
+                if (!activeStudent || isTeacher) return;
+                await publishStudentNoteOrIssue(activeStudent, data);
+                showToast(
+                  'success',
+                  lang === 'ar'
+                    ? 'تم نشر مشاركتك لتظهر لجميع الطلاب والمعلمة!'
+                    : 'Your post is now visible to all students and the teacher!'
+                );
+              }}
+              onDeleteOwnNote={async (noteId) => {
+                if (isTeacher) return;
+                await deleteNote(noteId);
+                showToast('success', lang === 'ar' ? 'تم حذف الملاحظة' : 'Note deleted');
               }}
             />
           )}
