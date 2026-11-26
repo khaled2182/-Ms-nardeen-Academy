@@ -618,7 +618,7 @@ function AcademyApp() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col lg:flex-row">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[#F8FAFC] dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col lg:flex-row">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-white dark:bg-slate-900 border-e border-slate-200/80 dark:border-slate-800 p-5 justify-between z-30">
         <div className="space-y-6">
@@ -721,12 +721,14 @@ function AcademyApp() {
 
           {activeStudent && (!isTeacher || teacherPreviewStudentMode) && (
             <div className="flex items-center gap-3 px-2 py-1">
-              <AvatarImage
-                src={activeStudent.photoURL}
-                alt={activeStudent.displayName}
-                className="w-10 h-10 rounded-xl object-contain bg-sky-50 dark:bg-slate-800 p-0.5"
-                transparentStage
-              />
+              <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-slate-800 p-0.5 shrink-0 overflow-hidden flex items-center justify-center">
+                <AvatarImage
+                  src={activeStudent.photoURL}
+                  alt={activeStudent.displayName}
+                  className="w-full h-full rounded-lg"
+                  transparentStage
+                />
+              </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                   {activeStudent.displayName}
@@ -741,15 +743,15 @@ function AcademyApp() {
       </aside>
 
       {/* Mobile Compact Top Bar (52px) */}
-      <header className="lg:hidden sticky top-0 z-30 h-13 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <header className="lg:hidden sticky top-0 z-30 w-full max-w-full h-13 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-4 flex items-center justify-between gap-2 overflow-hidden">
+        <div className="flex items-center gap-2 min-w-0">
           <img
             src={customAppIconUrl || ASSET_IMAGES.appIcon}
             alt={t(lang, 'brandName')}
             referrerPolicy="no-referrer"
             className="w-8 h-8 rounded-lg object-cover border border-sky-200/80 dark:border-sky-800 shrink-0"
           />
-          <span className="text-base font-bold text-sky-700 dark:text-sky-300 truncate">
+          <span className="text-sm sm:text-base font-bold text-sky-700 dark:text-sky-300 truncate">
             {t(lang, 'brandName')}
           </span>
         </div>
@@ -763,7 +765,7 @@ function AcademyApp() {
                 setTeacherPreviewStudentMode(next);
                 setActiveTab(next ? 'home' : 'teacher');
               }}
-              className="min-h-[38px] px-3 rounded-xl bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-xs font-bold"
+              className="min-h-[38px] px-2.5 sm:px-3 rounded-xl bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-xs font-bold whitespace-nowrap"
             >
               {teacherPreviewStudentMode ? t(lang, 'navTeacher') : t(lang, 'previewStudentMode')}
             </button>
@@ -785,8 +787,8 @@ function AcademyApp() {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 lg:ps-64 pb-24 lg:pb-10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 min-w-0 w-full lg:ps-64 pb-24 lg:pb-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
           {/* Teacher Dashboard (Strictly Role-Gated) */}
           {activeTab === 'teacher' && (
             isTeacher ? (
@@ -989,31 +991,31 @@ function AcademyApp() {
         </div>
       </main>
 
-      {/* Mobile Fixed Bottom Navigation Bar (60px, 5 thumb-zone items) */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 h-15 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-5 items-center px-1">
+      {/* Mobile Fixed Bottom Navigation Bar (5 symmetrical thumb-zone items) */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 w-full max-w-[100vw] z-40 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-5 items-center px-1 overflow-hidden">
         {isTeacher && !teacherPreviewStudentMode ? (
           <>
             <button
               type="button"
               onClick={() => setActiveTab('teacher')}
-              className={`flex flex-col items-center justify-center min-h-[44px] ${
-                activeTab === 'teacher' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500'
+              className={`min-w-0 w-full px-0.5 flex flex-col items-center justify-center min-h-[46px] overflow-hidden ${
+                activeTab === 'teacher' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <LayoutDashboard className="w-5 h-5" />
-              <span className="text-[10px] font-semibold mt-0.5 truncate max-w-full">
+              <LayoutDashboard className="w-5 h-5 shrink-0" />
+              <span className="text-[11px] font-semibold mt-0.5 truncate max-w-full block">
                 {t(lang, 'navTeacher')}
               </span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('leaderboard')}
-              className={`flex flex-col items-center justify-center min-h-[44px] ${
-                activeTab === 'leaderboard' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500'
+              className={`min-w-0 w-full px-0.5 flex flex-col items-center justify-center min-h-[46px] overflow-hidden ${
+                activeTab === 'leaderboard' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <Trophy className="w-5 h-5" />
-              <span className="text-[10px] font-semibold mt-0.5 truncate max-w-full">
+              <Trophy className="w-5 h-5 shrink-0" />
+              <span className="text-[11px] font-semibold mt-0.5 truncate max-w-full block">
                 {t(lang, 'navLeaderboard')}
               </span>
             </button>
@@ -1023,10 +1025,10 @@ function AcademyApp() {
                 setTeacherPreviewStudentMode(true);
                 setActiveTab('lessons');
               }}
-              className="flex flex-col items-center justify-center min-h-[44px] text-slate-500"
+              className="min-w-0 w-full px-0.5 flex flex-col items-center justify-center min-h-[46px] overflow-hidden text-slate-500 dark:text-slate-400"
             >
-              <BookOpen className="w-5 h-5" />
-              <span className="text-[10px] font-semibold mt-0.5 truncate max-w-full">
+              <BookOpen className="w-5 h-5 shrink-0" />
+              <span className="text-[11px] font-semibold mt-0.5 truncate max-w-full block">
                 {t(lang, 'navLessons')}
               </span>
             </button>
@@ -1036,22 +1038,22 @@ function AcademyApp() {
                 setTeacherPreviewStudentMode(true);
                 setActiveTab('rewards');
               }}
-              className="flex flex-col items-center justify-center min-h-[44px] text-slate-500"
+              className="min-w-0 w-full px-0.5 flex flex-col items-center justify-center min-h-[46px] overflow-hidden text-slate-500 dark:text-slate-400"
             >
-              <Gift className="w-5 h-5" />
-              <span className="text-[10px] font-semibold mt-0.5 truncate max-w-full">
+              <Gift className="w-5 h-5 shrink-0" />
+              <span className="text-[11px] font-semibold mt-0.5 truncate max-w-full block">
                 {t(lang, 'navRewards')}
               </span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('settings')}
-              className={`flex flex-col items-center justify-center min-h-[44px] ${
-                activeTab === 'settings' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500'
+              className={`min-w-0 w-full px-0.5 flex flex-col items-center justify-center min-h-[46px] overflow-hidden ${
+                activeTab === 'settings' ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <Settings className="w-5 h-5" />
-              <span className="text-[10px] font-semibold mt-0.5 truncate max-w-full">
+              <Settings className="w-5 h-5 shrink-0" />
+              <span className="text-[11px] font-semibold mt-0.5 truncate max-w-full block">
                 {t(lang, 'navSettings')}
               </span>
             </button>
@@ -1060,23 +1062,23 @@ function AcademyApp() {
           <>
             {(
               [
-                { id: 'home', label: t(lang, 'navHome'), icon: <Home className="w-5 h-5" /> },
-                { id: 'lessons', label: t(lang, 'navLessons'), icon: <BookOpen className="w-5 h-5" /> },
-                { id: 'tasks', label: t(lang, 'navTasks'), icon: <ClipboardList className="w-5 h-5" /> },
-                { id: 'leaderboard', label: t(lang, 'navLeaderboard'), icon: <Trophy className="w-5 h-5" /> },
-                { id: 'profile', label: t(lang, 'navProfile'), icon: <UserIcon className="w-5 h-5" /> },
+                { id: 'home', label: t(lang, 'navHome'), icon: <Home className="w-5 h-5 shrink-0" /> },
+                { id: 'lessons', label: t(lang, 'navLessons'), icon: <BookOpen className="w-5 h-5 shrink-0" /> },
+                { id: 'tasks', label: t(lang, 'navTasks'), icon: <ClipboardList className="w-5 h-5 shrink-0" /> },
+                { id: 'leaderboard', label: t(lang, 'navLeaderboard'), icon: <Trophy className="w-5 h-5 shrink-0" /> },
+                { id: 'profile', label: t(lang, 'navProfile'), icon: <UserIcon className="w-5 h-5 shrink-0" /> },
               ] as const
             ).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center justify-center min-h-[44px] ${
+                className={`min-w-0 w-full px-0.5 flex flex-col items-center justify-center min-h-[46px] overflow-hidden ${
                   activeTab === tab.id ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {tab.icon}
-                <span className="text-[10px] font-semibold mt-0.5 truncate max-w-full">
+                <span className="text-[11px] font-semibold mt-0.5 truncate max-w-full block">
                   {tab.label}
                 </span>
               </button>

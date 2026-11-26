@@ -63,13 +63,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-xl self-start">
+        <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-xl w-full sm:w-auto max-w-full">
           {(['all', 'quiz', 'homework'] as const).map((k) => (
             <button
               key={k}
               type="button"
               onClick={() => setFilterType(k)}
-              className={`min-h-[38px] px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+              className={`min-h-[38px] px-2 sm:px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors text-center truncate ${
                 filterType === k
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300'

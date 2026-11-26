@@ -23,13 +23,23 @@ export const AvatarImage: React.FC<{
     );
   }
 
+  const isTransparentCutout =
+    transparentStage &&
+    (src.startsWith('data:image/svg') || src.startsWith('data:image/png'));
+
+  const fitClass = transparentStage
+    ? isTransparentCutout
+      ? 'object-contain bg-transparent'
+      : 'object-cover'
+    : '';
+
   return (
     <img
       src={src}
       alt={alt}
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
-      className={`${className} ${transparentStage ? 'object-contain bg-transparent' : ''}`}
+      className={`${className} ${fitClass}`}
     />
   );
 };

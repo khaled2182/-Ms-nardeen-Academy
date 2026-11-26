@@ -62,14 +62,14 @@ export const LessonsView: React.FC<LessonsViewProps> = ({
         </div>
 
         {/* Interactive filter controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-xl">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto max-w-full">
+          <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-xl w-full sm:w-auto max-w-full">
             {(['all', 'new', 'completed'] as const).map((key) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setStatusFilter(key)}
-                className={`min-h-[38px] px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                className={`min-h-[38px] px-2 sm:px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors text-center truncate ${
                   statusFilter === key
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
@@ -88,7 +88,7 @@ export const LessonsView: React.FC<LessonsViewProps> = ({
             <select
               value={topicFilter}
               onChange={(e) => setTopicFilter(e.target.value)}
-              className="min-h-[42px] px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200"
+              className="min-h-[42px] px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 max-w-full flex-1 sm:flex-initial"
             >
               <option value="all">{t(lang, 'topicAll')}</option>
               {topics.map((tp) => (
@@ -103,7 +103,7 @@ export const LessonsView: React.FC<LessonsViewProps> = ({
             <select
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value)}
-              className="min-h-[42px] px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200"
+              className="min-h-[42px] px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 max-w-full flex-1 sm:flex-initial"
             >
               <option value="all">{t(lang, 'levelAll')}</option>
               {levels.map((lvl) => (

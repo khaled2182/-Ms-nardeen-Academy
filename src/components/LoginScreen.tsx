@@ -54,17 +54,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[#F8FAFC] dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col">
       {/* Clean 3-zone Top Bar */}
-      <header className="w-full max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="w-full max-w-6xl mx-auto px-4 sm:px-5 py-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <img
             src={appIconUrl || ASSET_IMAGES.appIcon}
             alt={t(lang, 'brandName')}
             referrerPolicy="no-referrer"
             className="w-10 h-10 rounded-xl object-cover border border-sky-200/80 dark:border-sky-800 shadow-sm shrink-0"
           />
-          <span className="text-xl font-bold tracking-tight text-sky-700 dark:text-sky-300 whitespace-nowrap shrink-0">
+          <span className="text-lg sm:text-xl font-bold tracking-tight text-sky-700 dark:text-sky-300 truncate">
             {t(lang, 'brandName')}
           </span>
         </div>

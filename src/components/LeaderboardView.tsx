@@ -61,13 +61,13 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
         </div>
 
         {/* Timeframe Segmented Switch */}
-        <div className="flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-xl self-start">
+        <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-2xl w-full md:w-auto max-w-full">
           {(['weekly', 'monthly', 'all'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setPeriod(tab)}
-              className={`min-h-[40px] px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+              className={`min-h-[42px] px-2 sm:px-4 py-1.5 text-[11px] sm:text-xs font-semibold rounded-xl transition-colors text-center leading-tight flex items-center justify-center sm:whitespace-nowrap ${
                 period === tab
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300'
@@ -98,13 +98,15 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       <Medal className="w-4 h-4 text-slate-400" />
                       <span>#2</span>
                     </div>
-                    <div className="w-24 h-24 rounded-full bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 p-2 mb-3 flex items-center justify-center">
-                      <AvatarImage
-                        src={top2.student.photoURL}
-                        alt={top2.student.displayName}
-                        className="w-full h-full object-contain"
-                        transparentStage
-                      />
+                    <div className="w-24 h-24 rounded-full bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 p-1 mb-3 flex items-center justify-center overflow-hidden">
+                      <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+                        <AvatarImage
+                          src={top2.student.photoURL}
+                          alt={top2.student.displayName}
+                          className="w-full h-full rounded-full"
+                          transparentStage
+                        />
+                      </div>
                     </div>
                     <h3 className="font-bold text-base text-slate-900 dark:text-white truncate max-w-full">
                       {top2.student.displayName}
@@ -132,14 +134,16 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       </span>
                     </div>
 
-                    {/* Transparent PNG Cutout Stage with Luminous Frame */}
-                    <div className="relative w-40 h-40 sm:w-48 sm:h-48 rounded-full champion-glow-ring bg-white/55 dark:bg-slate-900/55 backdrop-blur-sm p-3 mb-4 flex items-center justify-center">
-                      <AvatarImage
-                        src={top1.student.photoURL}
-                        alt={top1.student.displayName}
-                        className="w-full h-full object-contain drop-shadow-md"
-                        transparentStage
-                      />
+                    {/* Transparent PNG / Photo Stage with Luminous Circular Frame */}
+                    <div className="relative w-40 h-40 sm:w-48 sm:h-48 rounded-full champion-glow-ring bg-white/55 dark:bg-slate-900/55 backdrop-blur-sm p-1.5 mb-4 flex items-center justify-center overflow-hidden">
+                      <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+                        <AvatarImage
+                          src={top1.student.photoURL}
+                          alt={top1.student.displayName}
+                          className="w-full h-full rounded-full drop-shadow-md"
+                          transparentStage
+                        />
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 mb-1">
@@ -173,13 +177,15 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       <Medal className="w-4 h-4 text-amber-600" />
                       <span>#3</span>
                     </div>
-                    <div className="w-24 h-24 rounded-full bg-white dark:bg-slate-900 border-2 border-amber-300/80 dark:border-amber-700/60 p-2 mb-3 flex items-center justify-center">
-                      <AvatarImage
-                        src={top3.student.photoURL}
-                        alt={top3.student.displayName}
-                        className="w-full h-full object-contain"
-                        transparentStage
-                      />
+                    <div className="w-24 h-24 rounded-full bg-white dark:bg-slate-900 border-2 border-amber-300/80 dark:border-amber-700/60 p-1 mb-3 flex items-center justify-center overflow-hidden">
+                      <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+                        <AvatarImage
+                          src={top3.student.photoURL}
+                          alt={top3.student.displayName}
+                          className="w-full h-full rounded-full"
+                          transparentStage
+                        />
+                      </div>
                     </div>
                     <h3 className="font-bold text-base text-slate-900 dark:text-white truncate max-w-full">
                       {top3.student.displayName}
@@ -224,11 +230,11 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       >
                         #{rank}
                       </span>
-                      <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 p-1 shrink-0 flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 p-0.5 shrink-0 flex items-center justify-center overflow-hidden">
                         <AvatarImage
                           src={student.photoURL}
                           alt={student.displayName}
-                          className="w-full h-full object-contain"
+                          className="w-full h-full rounded-xl"
                           transparentStage
                         />
                       </div>

@@ -396,12 +396,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       <span className="w-6 text-sm font-bold text-slate-400 tabular-nums">
                         #{idx + 1}
                       </span>
-                      <AvatarImage
-                        src={st.photoURL}
-                        alt={st.displayName}
-                        className="w-10 h-10 rounded-xl object-contain bg-slate-50 dark:bg-slate-800 p-0.5"
-                        transparentStage
-                      />
+                      <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-800 p-0.5 shrink-0 overflow-hidden flex items-center justify-center">
+                        <AvatarImage
+                          src={st.photoURL}
+                          alt={st.displayName}
+                          className="w-full h-full rounded-lg"
+                          transparentStage
+                        />
+                      </div>
                       <div className="min-w-0">
                         <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
                           {st.displayName}
@@ -489,11 +491,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="w-16 h-16 rounded-2xl bg-sky-50 dark:bg-sky-950/50 p-1.5 shrink-0 flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-2xl bg-sky-50 dark:bg-sky-950/50 p-1 shrink-0 flex items-center justify-center overflow-hidden">
                         <AvatarImage
                           src={st.photoURL}
                           alt={st.displayName}
-                          className="w-full h-full object-contain"
+                          className="w-full h-full rounded-xl"
                           transparentStage
                         />
                       </div>
@@ -1382,11 +1384,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-2xl bg-sky-50 dark:bg-sky-950/50 p-1.5 flex items-center justify-center shrink-0">
+              <div className="w-20 h-20 rounded-2xl bg-sky-50 dark:bg-sky-950/50 p-1 flex items-center justify-center shrink-0 overflow-hidden">
                 <AvatarImage
                   src={editStudentForm.photoURL}
                   alt={editStudentForm.displayName}
-                  className="w-full h-full object-contain"
+                  className="w-full h-full rounded-xl"
                   transparentStage
                 />
               </div>
