@@ -89,8 +89,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       </header>
 
       <main className="flex-1 flex items-center justify-center px-5 py-8">
-        <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-          <div className="lg:col-span-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-7 sm:p-10 flex flex-col justify-between shadow-sm">
+        <div className="w-full max-w-xl">
+          <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-7 sm:p-10 flex flex-col justify-between shadow-sm">
             <div>
               <p className="text-sm font-semibold text-violet-600 dark:text-violet-400 mb-3">
                 {lang === 'ar' ? 'أكاديمية تعلم اللغة الإنجليزية للأطفال' : 'Interactive English Learning for Young Stars'}
@@ -209,15 +209,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   : 'Secure Google Sign-In with automatic Teacher & Student role access'}
               </p>
             </div>
-          </div>
-
-          <div className="lg:col-span-6 rounded-3xl overflow-hidden bg-sky-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
-            <img
-              src={ASSET_IMAGES.heroBanner}
-              alt="Ms nardeen Academy Mascot"
-              referrerPolicy="no-referrer"
-              className="w-full h-72 lg:h-full object-cover"
-            />
           </div>
         </div>
       </main>
