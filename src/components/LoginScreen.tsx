@@ -3,6 +3,7 @@ import { Award, BookOpen, Globe, ImagePlus, Moon, PlayCircle, Sun, Trophy, X } f
 import { ASSET_IMAGES, compressTransparentImageFile } from '../lib/gamification';
 import { t } from '../lib/i18n';
 import { Language, ThemeMode } from '../types';
+import { ContactSupportSection } from './SharedUI';
 
 interface LoginScreenProps {
   lang: Language;
@@ -89,7 +90,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       </header>
 
       <main className="flex-1 flex items-center justify-center px-5 py-8">
-        <div className="w-full max-w-xl">
+        <div className="w-full max-w-xl space-y-5">
           <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-7 sm:p-10 flex flex-col justify-between shadow-sm">
             <div>
               <p className="text-sm font-semibold text-violet-600 dark:text-violet-400 mb-3">
@@ -210,6 +211,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </p>
             </div>
           </div>
+
+          <ContactSupportSection lang={lang} compact />
         </div>
       </main>
     </div>

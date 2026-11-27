@@ -17,6 +17,7 @@ import { ASSET_IMAGES, compressTransparentImageFile } from '../lib/gamification'
 import { t } from '../lib/i18n';
 import { AcademyNotification, Language, ThemeMode } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
+import { ContactSupportSection } from './SharedUI';
 
 interface SettingsViewProps {
   lang: Language;
@@ -366,6 +367,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         )}
       </section>
+
+      {/* Academy Contact Numbers */}
+      <ContactSupportSection lang={lang} />
 
       {/* Teacher Accounts Management Shortcut */}
       {isTeacher && isAdminTeacher && onOpenTeacherAccounts && (
