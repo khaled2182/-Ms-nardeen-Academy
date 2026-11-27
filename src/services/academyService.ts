@@ -16,7 +16,9 @@ import {
   auth,
   BOOTSTRAP_ADMIN_EMAIL,
   db,
+  ensureFirestoreNetwork,
   handleFirestoreError,
+  isOfflineOrTransientError,
   OperationType,
 } from '../lib/firebase';
 import {
@@ -72,6 +74,23 @@ function makeTxId(prefix: string): string {
   return `${prefix}_${Date.now()}_${rand}`.replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
+async function withOfflineRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isOfflineOrTransientError(error) || attempt === maxRetries) {
+        throw error;
+      }
+      await ensureFirestoreNetwork();
+      await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 export async function bootstrapUserSession(user: User): Promise<{
   role: UserRole;
   isAdminTeacher: boolean;
@@ -88,7 +107,7 @@ export async function bootstrapUserSession(user: User): Promise<{
 
   if (!isRegisteredTeacher && user.emailVerified) {
     try {
-      const teacherSnap = await getDoc(doc(db, 'teachers', uid));
+      const teacherSnap = await withOfflineRetry(() => getDoc(doc(db, 'teachers', uid)), 1);
       if (teacherSnap.exists()) {
         isRegisteredTeacher = true;
         const tData = teacherSnap.data() as TeacherProfile;
@@ -102,7 +121,7 @@ export async function bootstrapUserSession(user: User): Promise<{
   if (!isRegisteredTeacher && user.emailVerified && email) {
     try {
       const inviteId = toEmailDocId(email);
-      const inviteSnap = await getDoc(doc(db, 'teacher_invites', inviteId));
+      const inviteSnap = await withOfflineRetry(() => getDoc(doc(db, 'teacher_invites', inviteId)), 1);
       if (inviteSnap.exists()) {
         const invite = inviteSnap.data() as Omit<TeacherInvite, 'id'>;
         if (normalizeEmail(invite.email) === email) {
@@ -125,7 +144,7 @@ export async function bootstrapUserSession(user: User): Promise<{
             uid,
             updatedAt: serverTimestamp(),
           });
-          await batch.commit();
+          await withOfflineRetry(() => batch.commit(), 1);
           isRegisteredTeacher = true;
           teacherRoleType = invite.roleType === 'admin' ? 'admin' : 'teacher';
         }
@@ -141,31 +160,32 @@ export async function bootstrapUserSession(user: User): Promise<{
   let userPrivate: UserPrivate;
 
   try {
-    const privateSnap = await getDoc(privateRef);
-    if (!privateSnap.exists()) {
-      const payload: UserPrivate = {
-        uid,
-        email: clampStr(user.email || `${uid}@academy.local`, 254),
-        role,
-        preferredLanguage: 'ar',
-        preferredTheme: 'light',
-        notificationsEnabled: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-      await setDoc(privateRef, payload);
-      userPrivate = { ...payload };
-    } else {
+    userPrivate = await withOfflineRetry(async () => {
+      const privateSnap = await getDoc(privateRef);
+      if (!privateSnap.exists()) {
+        const payload: UserPrivate = {
+          uid,
+          email: clampStr(user.email || `${uid}@academy.local`, 254),
+          role,
+          preferredLanguage: 'ar',
+          preferredTheme: 'light',
+          notificationsEnabled: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        await setDoc(privateRef, payload);
+        return { ...payload };
+      }
       const existing = privateSnap.data() as UserPrivate;
       if (existing.role !== role && isRegisteredTeacher) {
         await updateDoc(privateRef, { role: 'teacher', updatedAt: serverTimestamp() });
-        userPrivate = { ...existing, role: 'teacher' };
-      } else if (existing.role === 'teacher' && !isRegisteredTeacher) {
-        userPrivate = { ...existing, role: 'student' };
-      } else {
-        userPrivate = existing;
+        return { ...existing, role: 'teacher' };
       }
-    }
+      if (existing.role === 'teacher' && !isRegisteredTeacher) {
+        return { ...existing, role: 'student' };
+      }
+      return existing;
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `user_private/${uid}`);
   }
@@ -176,7 +196,7 @@ export async function bootstrapUserSession(user: User): Promise<{
 
   const studentRef = doc(db, 'students', uid);
   try {
-    const studentSnap = await getDoc(studentRef);
+    const studentSnap = await withOfflineRetry(() => getDoc(studentRef));
     if (!studentSnap.exists()) {
       return { role, isAdminTeacher: false, userPrivate, studentProfile: null, needsOnboarding: true };
     }

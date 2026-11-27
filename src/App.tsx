@@ -31,8 +31,10 @@ import {
   auth,
   BOOTSTRAP_ADMIN_EMAIL,
   db,
+  ensureFirestoreNetwork,
   googleProvider,
   handleFirestoreError,
+  isOfflineOrTransientError,
   OperationType,
   registerNotificationServiceWorker,
   requestBrowserAndFcmNotifications,
@@ -150,6 +152,10 @@ function AcademyApp() {
     } else {
       root.classList.remove('dark');
     }
+    const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.content = theme === 'dark' ? '#0B1120' : '#F8FAFC';
+    }
   }, [theme]);
 
   // Startup connection check, SW registration & Web App Icon sync
@@ -166,6 +172,31 @@ function AcademyApp() {
   useEffect(() => {
     applyWebAppIconToHead(customAppIconUrl);
   }, [customAppIconUrl]);
+
+  const initUserSession = async (firebaseUser: User) => {
+    try {
+      const session = await bootstrapUserSession(firebaseUser);
+      setAuthError(null);
+      setUser(firebaseUser);
+      setRole(session.role);
+      setIsAdminTeacher(session.isAdminTeacher);
+      setUserPrivate(session.userPrivate);
+      setNeedsOnboarding(session.needsOnboarding);
+      setLang(session.userPrivate.preferredLanguage || 'ar');
+      setTheme(session.userPrivate.preferredTheme || 'light');
+      setActiveTab(session.role === 'teacher' ? 'teacher' : 'home');
+    } catch (err) {
+      if (isOfflineOrTransientError(err)) {
+        setAuthError(
+          lang === 'ar'
+            ? 'تعذر الاتصال بقاعدة البيانات بسبب ضعف أو انقطاع الإنترنت. يرجى التحقق من الشبكة ثم الضغط على تسجيل الدخول للمحاولة مجددًا.'
+            : 'Could not reach the database due to an unstable or offline network connection. Please check your internet and try again.'
+        );
+      } else {
+        setAuthError(err instanceof Error ? err.message : 'Failed to initialize session');
+      }
+    }
+  };
 
   // Auth listener & user bootstrap
   useEffect(() => {
@@ -195,23 +226,25 @@ function AcademyApp() {
       }
 
       try {
-        const session = await bootstrapUserSession(firebaseUser);
-        setUser(firebaseUser);
-        setRole(session.role);
-        setIsAdminTeacher(session.isAdminTeacher);
-        setUserPrivate(session.userPrivate);
-        setNeedsOnboarding(session.needsOnboarding);
-        setLang(session.userPrivate.preferredLanguage || 'ar');
-        setTheme(session.userPrivate.preferredTheme || 'light');
-        setActiveTab(session.role === 'teacher' ? 'teacher' : 'home');
-      } catch (err) {
-        setAuthError(err instanceof Error ? err.message : 'Failed to initialize session');
+        await initUserSession(firebaseUser);
       } finally {
         setAuthReady(true);
       }
     });
     return () => unsub();
   }, []);
+
+  // Automatically recover session if the device regains connectivity while Firebase Auth is already signed in
+  useEffect(() => {
+    const handleOnline = async () => {
+      await ensureFirestoreNetwork();
+      if (auth.currentUser && !user) {
+        await initUserSession(auth.currentUser);
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [user]);
 
   // Real-time Firestore subscriptions (only when authReady && user && !needsOnboarding)
   useEffect(() => {
@@ -545,7 +578,15 @@ function AcademyApp() {
     setAuthLoading(true);
     setAuthError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await ensureFirestoreNetwork();
+      if (auth.currentUser && !user) {
+        await initUserSession(auth.currentUser);
+        return;
+      }
+      const cred = await signInWithPopup(auth, googleProvider);
+      if (cred.user && !user) {
+        await initUserSession(cred.user);
+      }
     } catch (err: unknown) {
       const code =
         typeof err === 'object' && err !== null && 'code' in err
